@@ -1,0 +1,121 @@
+@import "tailwindcss";
+
+:root {
+  --background: #050508;
+  --foreground: #f4f4f8;
+  --accent-violet: #8b5cf6;
+  --accent-blue: #3b82f6;
+  --glass: rgba(255, 255, 255, 0.04);
+  --glass-border: rgba(255, 255, 255, 0.08);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+@keyframes pulse-glow {
+  0%,
+  100% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.85;
+    transform: scale(1.02);
+  }
+}
+
+@keyframes spin-slow {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.03) 0%,
+    rgba(139, 92, 246, 0.15) 50%,
+    rgba(255, 255, 255, 0.03) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.8s ease-in-out infinite;
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 4s ease-in-out infinite;
+}
+
+.glass-card {
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.prose-roadmap h1,
+.prose-roadmap h2,
+.prose-roadmap h3,
+.prose-roadmap h4 {
+  color: #f4f4f8;
+  font-weight: 600;
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.prose-roadmap p {
+  color: #c4c4d4;
+  line-height: 1.7;
+  margin-bottom: 0.75rem;
+}
+
+.prose-roadmap ul,
+.prose-roadmap ol {
+  color: #b8b8cc;
+  padding-left: 1.25rem;
+  margin-bottom: 0.75rem;
+}
+
+.prose-roadmap li {
+  margin-bottom: 0.35rem;
+}
+
+.prose-roadmap strong {
+  color: #e8e8f4;
+}
+
+.prose-roadmap code {
+  background: rgba(139, 92, 246, 0.15);
+  color: #c4b5fd;
+  padding: 0.15rem 0.4rem;
+  border-radius: 0.25rem;
+  font-size: 0.875em;
+}
+
+.prose-roadmap a {
+  color: #a78bfa;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
