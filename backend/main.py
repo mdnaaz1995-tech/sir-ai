@@ -16,12 +16,11 @@ app = FastAPI(
     version="2.0.0"
 )
 
-# --- CORS SETUP (Ye frontend ko connect karne ke liye zaroori hai) ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # Sabhi frontend connections allow karega
+    allow_origins=["*"], 
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["*"], # Sabhi methods (GET, POST, OPTIONS) allow karein
     allow_headers=["*"],
 )
 
@@ -67,5 +66,5 @@ async def generate_roadmap(request: SkillRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Engine Error: {str(e)}")
 
-if __name__ == "__main__":
-    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
+if __name__ == "__main__":    
+uvicorn.run("main:app", host="0.0.0.0", port=int(os.environ.get("PORT", 8000)), reload=True)
