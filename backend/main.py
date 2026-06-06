@@ -45,7 +45,7 @@ SYSTEM_PROMPT = (
 async def root():
     return {"message": "SIR AI Brain is now powered by Groq! ⚡️"}
 
-@app.post("/generate_roadmap")
+@app.api_route("/generate_roadmap", methods=["GET", "POST"])
 async def generate_roadmap(request: SkillRequest):
     try:
         completion = client.chat.completions.create(
