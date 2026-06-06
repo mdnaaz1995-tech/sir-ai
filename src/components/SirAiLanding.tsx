@@ -5,7 +5,7 @@ import { HeroSearch } from "./HeroSearch";
 import { LoadingState } from "./LoadingState";
 import { RoadmapDisplay } from "./RoadmapDisplay";
 
-const API_URL = "http://127.0.0.1:8000/generate_roadmap";
+const API_URL = "https://sir-ai-backend.onrender.com";
 
 export function SirAiLanding() {
   const [skill, setSkill] = useState("");
