@@ -1,5 +1,5 @@
 import os
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from groq import Groq
@@ -12,13 +12,13 @@ client = Groq(api_key=api_key)
 
 app = FastAPI(title="SIR AI Brain")
 
-# PROFESSIONAL CORS SETUP
+# ULTRA-PERMISSIVE CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # Allows all domains (Vercel, Mobile, etc.)
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"], # Allows GET, POST, OPTIONS, etc.
-    allow_headers=["*"], # Allows all headers
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 class SkillRequest(BaseModel):
@@ -31,19 +31,17 @@ SYSTEM_PROMPT = (
     "Accelerators, and a Professional Toolkit."
 )
 
+# ROOT ENDPOINT - Taaki agar koi sirf link khole toh error na aaye
 @app.get("/")
 async def root():
-    return {"status": "Online", "message": "SIR AI Backend is Live!"}
+    return {"status": "Online", "message": "SIR AI Backend is Live! Please use /generate_roadmap for AI."}
 
-@app.get("/health")
-async def health_check():
-    return {"status": "healthy", "engine": "Groq-Llama3"}
-
+# FLEXIBLE ENDPOINT - Root aur /generate_roadmap dono handle karega
 @app.api_route("/generate_roadmap", methods=["GET", "POST", "OPTIONS"])
+@app.api_route("/", methods=["POST"]) # Agar frontend root par bhej raha hai toh bhi chalega
 async def generate_roadmap(request: SkillRequest = None):
-    # Agar GET request hai (browser check), toh simple message dein
     if request is None:
-        return {"status": "Online", "message": "Brain is active! Please send a POST request with a skill."}
+        return {"status": "Online", "message": "Please provide a skill in the request body."}
     
     try:
         completion = client.chat.completions.create(
