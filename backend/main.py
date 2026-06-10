@@ -39,8 +39,12 @@ async def root():
 async def health_check():
     return {"status": "healthy", "engine": "Groq-Llama3"}
 
-@app.post("/generate_roadmap")
-async def generate_roadmap(request: SkillRequest):
+@app.api_route("/generate_roadmap", methods=["GET", "POST", "OPTIONS"])
+async def generate_roadmap(request: SkillRequest = None):
+    # Agar GET request hai (browser check), toh simple message dein
+    if request is None:
+        return {"status": "Online", "message": "Brain is active! Please send a POST request with a skill."}
+    
     try:
         completion = client.chat.completions.create(
             model="llama-3.1-8b-instant",
