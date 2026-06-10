@@ -7,19 +7,17 @@ from dotenv import load_dotenv
 from supabase import create_client, Client
 import uvicorn
 
-# 1. Load Environment Variables
 load_dotenv()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
-# 2. Initialize Clients
+# Initialize Clients
 groq_client = Groq(api_key=GROQ_API_KEY)
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 app = FastAPI(title="SIR AI - SaaS Brain")
 
-# Professional CORS Setup
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -40,19 +38,15 @@ SYSTEM_PROMPT = (
 
 @app.get("/")
 async def root():
-    return {"status": "Online", "message": "SIR AI Backend is Live and Connected to Database!"}
-
-@app.get("/health")
-async def health_check():
-    return {"status": "healthy", "engine": "Groq-Llama3", "database": "Supabase"}
+    return {"status": "Online", "message": "SIR AI Backend is Live!"}
 
 @app.post("/generate_roadmap")
-async def generate_//roadmap(request: SkillRequest):
+async def generate_roadmap(request: SkillRequest):
     try:
-        print("--- DEBUG: Request received for skill:", request.skill)
+        print(f"--- DEBUG: Request received for skill: {request.skill} ---")
         
-        # 1. Generate Roadmap
-        completion = client.chat.completions.create(
+        # 1. Generate AI Roadmap
+        completion = groq_client.chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
@@ -62,37 +56,30 @@ async def generate_//roadmap(request: SkillRequest):
             max_tokens=2048
         )
         roadmap_text = completion.choices[0].message.content
-        print("--- DEBUG: AI Roadmap generated successfully!")
+        print("--- DEBUG: AI generated roadmap successfully ---")
 
-        # 2. Save to Supabase
-        print("--- DEBUG: Attempting to save to Supabase...")
-        data = {
-            "user_id": "guest_user", 
-            "skill_name": request.skill,
-            "roadmap_content": roadmap_text
-        }
-        
-        # Humne yahan print lagaya hai taaki pata chale insert hua ya nahi
-        res = supabase.table("roadmaps").insert(data).execute()
-        print("--- DEBUG: Supabase response:", res)
+        # 2. Save to Supabase with Explicit Error Catching
+        try:
+            print("--- DEBUG: Attempting to save to Supabase... ---")
+            data = {
+                "user_id": "guest_user", 
+                "skill_name": request.skill,
+                "roadmap_content": roadmap_text
+            }
+            response = supabase.table("roadmaps").insert(data).execute()
+            print(f"--- DEBUG: Supabase Response: {response} ---")
+        except Exception as db_err:
+            print(f"--- DATABASE ERROR: {str(db_err)} ---")
+            # Hum error ko handle karenge lekin roadmap phir bhi user ko dikhayenge
+            print("Roadmap generated but NOT saved to DB.")
 
         return {
             "skill": request.skill,
             "roadmap": roadmap_text,
-            "status": "Success",
-            "saved": True
+            "status": "Success"
         }
     except Exception as e:
-        print(f"--- DEBUG ERROR: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Engine Error: {str(e)}")
-
-@app.get("/my-roadmaps")
-async def get_my_roadmaps():
-    try:
-        # Fetch all roadmaps for the guest user
-        response = supabase.table("roadmaps").select("*").eq("user_id", "guest_user").execute()
-        return {"roadmaps": response.data, "status": "Success"}
-    except Exception as e:
+        print(f"--- CRITICAL ENGINE ERROR: {str(e)} ---")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
