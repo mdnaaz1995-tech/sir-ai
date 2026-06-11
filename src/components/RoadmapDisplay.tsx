@@ -1,245 +1,118 @@
 "use client";
 
-import { useState } from "react";
+import React, { useState, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import {
-  parseRoadmapSections,
-  extractPhases,
-  type RoadmapSection,
-  type SectionKind,
-} from "@/lib/parseRoadmap";
+import { motion, AnimatePresence } from "framer-motion";
 
 interface RoadmapDisplayProps {
   skill: string;
   markdown: string;
 }
 
-const SECTION_META: Record<
-  SectionKind,
-  { icon: string; gradient: string; label: string }
-> = {
-  vision: {
-    icon: "🎯",
-    gradient: "from-violet-600/20 to-purple-900/10",
-    label: "Vision",
-  },
-  prerequisites: {
-    icon: "🛠️",
-    gradient: "from-blue-600/20 to-indigo-900/10",
-    label: "Prerequisites",
-  },
-  phases: {
-    icon: "🗺️",
-    gradient: "from-fuchsia-600/20 to-violet-900/10",
-    label: "Mastery Path",
-  },
-  accelerators: {
-    icon: "⚡",
-    gradient: "from-amber-500/15 to-orange-900/10",
-    label: "Pro Tips",
-  },
-  toolkit: {
-    icon: "🧰",
-    gradient: "from-emerald-600/15 to-teal-900/10",
-    label: "Toolkit",
-  },
-  other: {
-    icon: "✨",
-    gradient: "from-white/10 to-white/5",
-    label: "Roadmap",
-  },
-};
-
-function MarkdownBlock({ content }: { content: string }) {
-  return (
-    <div className="prose-roadmap text-sm md:text-base">
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
-    </div>
-  );
-}
-
-function SectionCard({ section }: { section: RoadmapSection }) {
-  const meta = SECTION_META[section.kind];
-
-  if (section.kind === "phases") {
-    const phases = extractPhases(section.content);
-    if (phases.length > 0) {
-      return (
-        <div className="glass-card rounded-2xl overflow-hidden">
-          <div
-            className={`px-6 py-4 border-b border-white/8 bg-gradient-to-r ${meta.gradient}`}
-          >
-            <h3 className="text-lg font-semibold flex items-center gap-2">
-              <span>{meta.icon}</span>
-              {section.title}
-            </h3>
-          </div>
-          <div className="p-6 md:p-8">
-            <div className="relative">
-              <div
-                className="absolute left-[11px] top-2 bottom-2 w-px bg-gradient-to-b from-violet-500/60 via-blue-500/40 to-transparent"
-                aria-hidden
-              />
-              <ol className="space-y-8">
-                {phases.map((phase, i) => (
-                  <li key={i} className="relative pl-10">
-                    <span
-                      className="absolute left-0 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-blue-600 text-xs font-bold text-white shadow-lg shadow-violet-900/50"
-                      aria-hidden
-                    >
-                      {i + 1}
-                    </span>
-                    <h4 className="text-base font-semibold text-white/95 mb-3">
-                      {phase.title}
-                    </h4>
-                    <div className="glass-card rounded-xl p-4 md:p-5 border-white/6">
-                      <MarkdownBlock content={phase.body} />
-                    </div>
-                  </li>
-                ))}
-              </ol>
-            </div>
-          </div>
-        </div>
-      );
-    }
-  }
-
-  return (
-    <div className="glass-card rounded-2xl overflow-hidden h-full">
-      <div
-        className={`px-6 py-4 border-b border-white/8 bg-gradient-to-r ${meta.gradient}`}
-      >
-        <h3 className="text-lg font-semibold flex items-center gap-2">
-          <span>{meta.icon}</span>
-          {section.title}
-        </h3>
-      </div>
-      <div className="p-6 md:p-7">
-        <MarkdownBlock content={section.content} />
-      </div>
-    </div>
-  );
-}
-
 export function RoadmapDisplay({ skill, markdown }: RoadmapDisplayProps) {
-  const [copied, setCopied] = useState(false);
-  const sections = parseRoadmapSections(markdown);
+  const [completedTasks, setCompletedTasks] = useState<string[]>([]);
+  const [totalTasks, setTotalTasks] = useState(0);
 
-  const vision = sections.filter((s) => s.kind === "vision");
-  const prerequisites = sections.filter((s) => s.kind === "prerequisites");
-  const phases = sections.filter((s) => s.kind === "phases");
-  const tips = sections.filter(
-    (s) => s.kind === "accelerators" || s.kind === "toolkit"
-  );
-  const other = sections.filter((s) => s.kind === "other");
-
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(markdown);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      /* clipboard unavailable */
+  useEffect(() => {
+    const savedProgress = localStorage.getItem(`progress-${skill}`);
+    if (savedProgress) {
+      setCompletedTasks(JSON.parse(savedProgress));
     }
+    const tasks = markdown.match(/🏆 PROOF OF WORK:|Core Topics:/g) || [];
+    setTotalTasks(tasks.length);
+  }, [skill, markdown]);
+
+  const toggleTask = (task: string) => {
+    const newProgress = completedTasks.includes(task)
+      ? completedTasks.filter((t) => t !== task)
+      : [...completedTasks, task];
+    
+    setCompletedTasks(newProgress);
+    localStorage.setItem(`progress-${skill}`, JSON.stringify(newProgress));
   };
 
-  const gridSections = [
-    ...vision,
-    ...prerequisites,
-    ...phases,
-    ...tips,
-    ...other,
-  ];
+  const progressPercentage = totalTasks > 0 
+    ? Math.round((completedTasks.length / totalTasks) * 100) 
+    : 0;
 
   return (
-    <div className="w-full max-w-5xl mx-auto mt-14 md:mt-16 px-4 pb-20">
-      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-8">
-        <div>
-          <p className="text-sm font-medium text-violet-400/90 uppercase tracking-widest mb-1">
-            Your Mastery Roadmap
-          </p>
-          <h2 className="text-2xl md:text-3xl font-bold bg-gradient-to-r from-white via-white to-white/60 bg-clip-text text-transparent">
-            {skill}
-          </h2>
+    <div className="max-w-4xl mx-auto mt-12 p-6 rounded-3xl bg-white/5 border border-white/10 backdrop-blur-xl shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-700">
+      
+      <div className="mb-8">
+        <div className="flex justify-between items-end mb-2">
+          <h3 className="text-violet-400 font-bold text-sm tracking-widest uppercase">Your Mastery Progress</h3>
+          <span className="text-2xl font-black text-white">{progressPercentage}%</span>
         </div>
-        <button
-          type="button"
-          onClick={handleCopy}
-          className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl glass-card text-sm font-medium text-white/80 hover:text-white hover:border-violet-500/30 transition-all"
-        >
-          {copied ? (
-            <>
-              <svg
-                className="w-4 h-4 text-emerald-400"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M5 13l4 4L19 7"
-                />
-              </svg>
-              Copied!
-            </>
-          ) : (
-            <>
-              <svg
-                className="w-4 h-4"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
-                />
-              </svg>
-              Copy to Clipboard
-            </>
-          )}
-        </button>
+        <div className="h-3 w-full bg-white/10 rounded-full overflow-hidden p-0.5 border border-white/5">
+          <motion.div 
+            initial={{ width: 0 }}
+            animate={{ width: `${progressPercentage}%` }}
+            className="h-full bg-gradient-to-r from-violet-500 via-fuchsia-500 to-blue-500 rounded-full shadow-[0_0_15px_rgba(139,92,246,0.5)]"
+          />
+        </div>
       </div>
 
-      <div className="grid gap-6 md:gap-8">
-        {(vision.length > 0 || prerequisites.length > 0) && (
-          <div className="grid md:grid-cols-2 gap-6 md:gap-8">
-            {vision.map((s, i) => (
-              <SectionCard key={`vision-${i}`} section={s} />
-            ))}
-            {prerequisites.map((s, i) => (
-              <SectionCard key={`pre-${i}`} section={s} />
-            ))}
-          </div>
+      <AnimatePresence>
+        {progressPercentage === 100 && (
+          <motion.div 
+            initial={{ scale: 0, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="mb-8 p-4 rounded-2xl bg-gradient-to-r from-yellow-500/20 to-orange-500/20 border border-yellow-500/50 text-center"
+          >
+            <span className="text-2xl">🏆</span>
+            <h4 className="text-yellow-400 font-bold text-lg">MASTERY ACHIEVED!</h4>
+            <p className="text-yellow-200/70 text-sm">You have conquered the {skill} roadmap!</p>
+          </motion.div>
         )}
+      </AnimatePresence>
 
-        {phases.map((s, i) => (
-          <SectionCard key={`phase-${i}`} section={s} />
-        ))}
+      <div className="prose prose-invert max-w-none">
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-3xl font-bold bg-gradient-to-r from-white to-white/60 bg-clip-text text-transparent">
+            {skill} Mastery Roadmap
+          </h2>
+          <button 
+            onClick={() => {
+              navigator.clipboard.writeText(markdown);
+              alert("Roadmap copied to clipboard!");
+            }}
+            className="px-4 py-2 rounded-full bg-white/10 hover:bg-white/20 border border-white/10 text-xs text-white/70 transition-all"
+          >
+            Copy to Clipboard
+          </button>
+        </div>
 
-        {tips.length > 0 && (
-          <div className="grid md:grid-cols-2 gap-6 md:gap-8">
-            {tips.map((s, i) => (
-              <SectionCard key={`tip-${i}`} section={s} />
-            ))}
-          </div>
-        )}
-
-        {gridSections.length === 0 && (
-          <div className="glass-card rounded-2xl p-6 md:p-8">
-            <MarkdownBlock content={markdown} />
-          </div>
-        )}
-
-        {other.map((s, i) => (
-          <SectionCard key={`other-${i}`} section={s} />
-        ))}
+        {/* Wrapper Div for Styling instead of putting className on ReactMarkdown */}
+        <div className="text-white/80">
+          <ReactMarkdown 
+            components={{
+              p: ({ children }) => {
+                const text = String(children).trim();
+                if (text.includes("PROOF OF WORK") || text.includes("Core Topics")) {
+                  const taskId = text.slice(0, 30).replace(/\s+/g, '_');
+                  const isChecked = completedTasks.includes(taskId);
+                  
+                  return (
+                    <div 
+                      onClick={() => toggleTask(taskId)}
+                      className={`cursor-pointer p-3 mb-3 rounded-xl border transition-all duration-300 flex items-start gap-3 ${
+                        isChecked 
+                        ? "bg-green-500/10 border-green-500/50 text-green-200" 
+                        : "bg-white/5 border-white/10 text-white/80 hover:bg-white/10"
+                      }`}
+                    >
+                      <div className={`mt-1 w-4 h-4 rounded-full border ${isChecked ? "bg-green-500 border-green-500" : "border-white/30"}`} />
+                      <div className={isChecked ? "line-through opacity-60" : ""}>{children}</div>
+                    </div>
+                  );
+                }
+                return <p className="mb-4 leading-relaxed text-white/70">{children}</p>;
+              }
+            }}
+          >
+            {markdown}
+          </ReactMarkdown>
+        </div>
       </div>
     </div>
   );
