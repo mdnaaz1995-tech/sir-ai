@@ -4,6 +4,7 @@ import { useState } from "react";
 import { HeroSearch } from "./HeroSearch";
 import { LoadingState } from "./LoadingState";
 import { RoadmapDisplay } from "./RoadmapDisplay";
+import { AuthModal } from "./AuthModal"; // Naya Modal Import kiya
 
 const API_URL = "https://sir-ai-backend.onrender.com";
 
@@ -13,6 +14,9 @@ export function SirAiLanding() {
   const [roadmap, setRoadmap] = useState<string | null>(null);
   const [activeSkill, setActiveSkill] = useState("");
   const [error, setError] = useState<string | null>(null);
+  
+  // Naya State Modal ko kholne aur band karne ke liye
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
 
   const generateRoadmap = async () => {
     const trimmed = skill.trim();
@@ -78,6 +82,7 @@ export function SirAiLanding() {
               SIR <span className="text-violet-400">AI</span>
             </span>
           </div>
+          
           <nav className="hidden sm:flex items-center gap-6 text-sm text-white/50">
             <span className="hover:text-white/80 transition-colors cursor-default">
               Roadmaps
@@ -88,6 +93,14 @@ export function SirAiLanding() {
             <span className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white/70">
               Premium
             </span>
+            
+            {/* Naya Login Button */}
+            <button 
+              onClick={() => setIsAuthModalOpen(true)}
+              className="px-6 py-2 ml-4 rounded-full bg-gradient-to-r from-violet-600 to-blue-600 hover:opacity-90 text-white text-sm font-bold shadow-[0_0_15px_rgba(139,92,246,0.3)] transition-all"
+            >
+              Login / Sign Up
+            </button>
           </nav>
         </div>
       </header>
@@ -139,6 +152,12 @@ export function SirAiLanding() {
       <footer className="relative z-10 border-t border-white/5 py-8 text-center text-sm text-white/30">
         © {new Date().getFullYear()} SIR AI · Premium AI Learning Platform
       </footer>
+
+      {/* Auth Modal Component yahan mount hua hai */}
+      <AuthModal 
+        isOpen={isAuthModalOpen} 
+        onClose={() => setIsAuthModalOpen(false)} 
+      />
     </div>
   );
 }
