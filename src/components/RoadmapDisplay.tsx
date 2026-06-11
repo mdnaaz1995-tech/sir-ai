@@ -16,7 +16,11 @@ export function RoadmapDisplay({ skill, markdown }: RoadmapDisplayProps) {
   useEffect(() => {
     const savedProgress = localStorage.getItem(`progress-${skill}`);
     if (savedProgress) {
-      setCompletedTasks(JSON.parse(savedProgress));
+      try {
+        setCompletedTasks(JSON.parse(savedProgress));
+      } catch (e) {
+        console.error("Error loading progress", e);
+      }
     }
     const tasks = markdown.match(/🏆 PROOF OF WORK:|Core Topics:/g) || [];
     setTotalTasks(tasks.length);
@@ -47,6 +51,7 @@ export function RoadmapDisplay({ skill, markdown }: RoadmapDisplayProps) {
           <motion.div 
             initial={{ width: 0 }}
             animate={{ width: `${progressPercentage}%` }}
+            transition={{ type: "spring", stiffness: 100, damping: 20 }}
             className="h-full bg-gradient-to-r from-violet-500 via-fuchsia-500 to-blue-500 rounded-full shadow-[0_0_15px_rgba(139,92,246,0.5)]"
           />
         </div>
@@ -57,6 +62,7 @@ export function RoadmapDisplay({ skill, markdown }: RoadmapDisplayProps) {
           <motion.div 
             initial={{ scale: 0, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0, opacity: 0 }}
             className="mb-8 p-4 rounded-2xl bg-gradient-to-r from-yellow-500/20 to-orange-500/20 border border-yellow-500/50 text-center"
           >
             <span className="text-2xl">🏆</span>
@@ -82,11 +88,11 @@ export function RoadmapDisplay({ skill, markdown }: RoadmapDisplayProps) {
           </button>
         </div>
 
-        {/* Wrapper Div for Styling instead of putting className on ReactMarkdown */}
-        <div className="text-white/80">
+        {/* FIXED: Moved className and style to the wrapper div */}
+        <div className="relative text-white/80" style={{ color: "#f8fafc" }}>
           <ReactMarkdown 
             components={{
-              p: ({ children }) => {
+              p: ({ children }: any) => {
                 const text = String(children).trim();
                 if (text.includes("PROOF OF WORK") || text.includes("Core Topics")) {
                   const taskId = text.slice(0, 30).replace(/\s+/g, '_');
@@ -101,7 +107,7 @@ export function RoadmapDisplay({ skill, markdown }: RoadmapDisplayProps) {
                         : "bg-white/5 border-white/10 text-white/80 hover:bg-white/10"
                       }`}
                     >
-                      <div className={`mt-1 w-4 h-4 rounded-full border ${isChecked ? "bg-green-500 border-green-500" : "border-white/30"}`} />
+                      <div className={`mt-1 w-4 h-4 rounded-full border transition-colors ${isChecked ? "bg-green-500 border-green-500" : "border-white/30"}`} />
                       <div className={isChecked ? "line-through opacity-60" : ""}>{children}</div>
                     </div>
                   );
