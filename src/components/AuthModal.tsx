@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
 interface AuthModalProps {
@@ -10,6 +11,7 @@ interface AuthModalProps {
 }
 
 export function AuthModal({ isOpen, onClose }: AuthModalProps) {
+  const router = useRouter();
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -25,11 +27,18 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
       if (isLogin) {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
-        onClose(); 
+        onClose();
+        router.push("/dashboard");
       } else {
-        const { error } = await supabase.auth.signUp({ email, password });
+        const { error, data } = await supabase.auth.signUp({ email, password });
         if (error) throw error;
-        setMessage({ text: "Success! Check your email to verify.", type: "success" });
+        // If session exists, the user was auto-confirmed (dev mode) → redirect
+        if (data.session) {
+          onClose();
+          router.push("/dashboard");
+        } else {
+          setMessage({ text: "Success! Check your email to verify.", type: "success" });
+        }
       }
     } catch (err: any) {
       setMessage({ text: err.message, type: "error" });
