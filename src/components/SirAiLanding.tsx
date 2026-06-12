@@ -1,6 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabase";
 import { HeroSearch } from "./HeroSearch";
 import { LoadingState } from "./LoadingState";
 import { RoadmapDisplay } from "./RoadmapDisplay";
@@ -9,11 +11,13 @@ import { AuthModal } from "./AuthModal"; // Naya Modal Import kiya
 const API_URL = "https://sir-ai-backend.onrender.com";
 
 export function SirAiLanding() {
+  const router = useRouter();
   const [skill, setSkill] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [roadmap, setRoadmap] = useState<string | null>(null);
   const [activeSkill, setActiveSkill] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [session, setSession] = useState<any>(null);
   
   // Naya State Modal ko kholne aur band karne ke liye
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
@@ -57,6 +61,18 @@ export function SirAiLanding() {
     }
   };
 
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session: s } }) => {
+      setSession(s);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
+      setSession(s);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
   return (
     <div className="relative min-h-screen overflow-hidden bg-[#050508]">
       <div
@@ -94,13 +110,21 @@ export function SirAiLanding() {
               Premium
             </span>
             
-            {/* Naya Login Button */}
-            <button 
-              onClick={() => setIsAuthModalOpen(true)}
-              className="px-6 py-2 ml-4 rounded-full bg-gradient-to-r from-violet-600 to-blue-600 hover:opacity-90 text-white text-sm font-bold shadow-[0_0_15px_rgba(139,92,246,0.3)] transition-all"
-            >
-              Login / Sign Up
-            </button>
+            {session ? (
+              <button 
+                onClick={() => router.push("/dashboard")}
+                className="px-6 py-2 ml-4 rounded-full bg-gradient-to-r from-emerald-500 to-teal-600 hover:opacity-90 text-white text-sm font-bold shadow-[0_0_15px_rgba(52,211,153,0.3)] transition-all"
+              >
+                Go to Dashboard
+              </button>
+            ) : (
+              <button 
+                onClick={() => setIsAuthModalOpen(true)}
+                className="px-6 py-2 ml-4 rounded-full bg-gradient-to-r from-violet-600 to-blue-600 hover:opacity-90 text-white text-sm font-bold shadow-[0_0_15px_rgba(139,92,246,0.3)] transition-all"
+              >
+                Login / Sign Up
+              </button>
+            )}
           </nav>
         </div>
       </header>
