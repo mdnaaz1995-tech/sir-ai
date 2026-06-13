@@ -1,3 +1,5 @@
+export const maxDuration = 60;
+
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
@@ -5,28 +7,7 @@ const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://axbgdvictqcumlhlypie.supabase.co";
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "sb_publishable_F2G3t3Y5OgcFsEoV8wH";
 
-const SYSTEM_PROMPT = `You are SIR AI, a world-class learning architect. Generate a structured, phase-by-phase mastery roadmap for the given skill.
-
-Format your response in Markdown with these exact sections:
-
-## 🎯 Vision Phase
-*Define what mastery looks like and set clear milestones.*
-
-## 📚 Fundamentals Phase  
-*Core concepts, theories, and foundational knowledge.*
-
-## 🔧 Core Skills Phase
-*Hands-on tools, frameworks, and practical abilities.*
-
-## 🏗️ Build Phase
-*Real-world projects to apply and solidify learning.*
-
-## 🚀 Mastery Phase
-*Advanced topics, specialization, and portfolio-worthy work.*
-
-For each phase include 3-5 actionable items with clear descriptions. Add a "🏆 PROOF OF WORK:" section at the end with concrete project ideas.
-
-Keep the tone motivational and precise. Use emoji bullets for scannability.`;
+const SYSTEM_PROMPT = `You are the world's most elite skill mentor. Generate a professional, phase-by-phase mastery roadmap. Use Markdown, bold headings, and emojis. Include: Vision, Prerequisites, 4-5 Phases with 'Proof of Work' tasks, Accelerators, and a Professional Toolkit.`;
 
 export async function POST(request: NextRequest) {
   try {
@@ -79,16 +60,16 @@ export async function POST(request: NextRequest) {
           Authorization: `Bearer ${GROQ_API_KEY}`,
         },
         body: JSON.stringify({
-          model: "llama3-70b-8192",
+          model: "llama-3.1-8b-instant",
           messages: [
             { role: "system", content: SYSTEM_PROMPT },
             {
               role: "user",
-              content: `Generate a detailed mastery roadmap for: ${skill.trim()}`,
+              content: `I want to master the skill: ${skill.trim()}.`,
             },
           ],
           temperature: 0.7,
-          max_tokens: 4096,
+          max_tokens: 2048,
         }),
       }
     );
@@ -125,10 +106,10 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({ roadmap, skill: skill.trim() });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Generate roadmap error:", error);
     return NextResponse.json(
-      { error: "Internal server error" },
+      { error: error.message || "Internal server error" },
       { status: 500 }
     );
   }

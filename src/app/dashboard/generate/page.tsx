@@ -53,7 +53,9 @@ export default function GeneratePage() {
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.error || `Request failed (${res.status})`);
+        const errorMsg = data.error || `Request failed (${res.status})`;
+        alert(errorMsg);
+        throw new Error(errorMsg);
       }
 
       setRoadmap(data.roadmap);
