@@ -1,8 +1,6 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase";
 
 // ---------- Icons ----------
 const SparkleIcon = () => (
@@ -201,11 +199,31 @@ function GeneratingOverlay({ message }: { message: string }) {
 }
 
 // ====================================================================
-// PAGE COMPONENT
+// ONBOARDING WIZARD PROPS
 // ====================================================================
-export default function GeneratePage() {
-  const router = useRouter();
+export interface OnboardingWizardProps {
+  /** Called when user completes the wizard with the collected data */
+  onGenerate: (data: {
+    background: string;
+    goal: string;
+    timeCommitment: string;
+    skill: string;
+    richSkill: string;
+  }) => void;
+  /** Whether the API is currently generating */
+  generating: boolean;
+  /** Optional custom loading messages */
+  loadingMessages?: string[];
+}
 
+// ====================================================================
+// ONBOARDING WIZARD COMPONENT
+// ====================================================================
+export function OnboardingWizard({
+  onGenerate,
+  generating,
+  loadingMessages: customMessages,
+}: OnboardingWizardProps) {
   // Wizard state
   const [step, setStep] = useState(1);
   const [background, setBackground] = useState("");
@@ -213,29 +231,34 @@ export default function GeneratePage() {
   const [goal, setGoal] = useState("");
   const [goalCustom, setGoalCustom] = useState("");
   const [timeCommitment, setTimeCommitment] = useState("");
-
-  // Skill topic (kept minimal — appears only at the end)
   const [skill, setSkill] = useState("");
 
-  // Generation
-  const [generating, setGenerating] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
   // Loading messages cycle
-  const loadingMessages = [
+  const defaultMessages = [
     "Analyzing your profile and background...",
     "Identifying the best path for your goal...",
     "Building your custom execution missions...",
     "Almost there — optimising your roadmap...",
   ];
+  const loadingMessages = customMessages || defaultMessages;
   const [loadingMsg, setLoadingMsg] = useState(loadingMessages[0]);
   const loadingInterval = useRef<NodeJS.Timeout | null>(null);
 
+  // Rotate loading messages when generating
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!session) router.push("/");
-    });
-  }, [router]);
+    if (generating) {
+      let msgIdx = 0;
+      loadingInterval.current = setInterval(() => {
+        msgIdx = (msgIdx + 1) % loadingMessages.length;
+        setLoadingMsg(loadingMessages[msgIdx]);
+      }, 2500);
+    } else {
+      if (loadingInterval.current) clearInterval(loadingInterval.current);
+    }
+    return () => {
+      if (loadingInterval.current) clearInterval(loadingInterval.current);
+    };
+  }, [generating, loadingMessages]);
 
   // ---------- Helpers ----------
   const getBackgroundValue = () =>
@@ -267,55 +290,20 @@ export default function GeneratePage() {
     setStep((s) => Math.max(s - 1, 1));
   };
 
-  // ---------- Generate ----------
-  const handleGenerate = async () => {
+  const handleGenerate = () => {
     const bg = getBackgroundValue();
     const gl = getGoalValue();
     if (!bg || !gl || !timeCommitment || !skill.trim()) return;
 
-    setGenerating(true);
-    setError(null);
-
-    // Rotate loading messages
-    let msgIdx = 0;
-    loadingInterval.current = setInterval(() => {
-      msgIdx = (msgIdx + 1) % loadingMessages.length;
-      setLoadingMsg(loadingMessages[msgIdx]);
-    }, 2500);
-
-    // Build the rich prompt string
     const richSkill = `I am a ${bg} who wants to ${gl}. I can dedicate ${timeCommitment}. Topic: ${skill.trim()}`;
 
-    try {
-      const res = await fetch("/api/generate-roadmap", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          skill: richSkill,
-          level: bg,
-          goal: `${gl} | Time: ${timeCommitment}`,
-        }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        const errorMsg = data.error || `Request failed (${res.status})`;
-        alert(errorMsg);
-        throw new Error(errorMsg);
-      }
-
-      if (data.id) {
-        router.push(`/dashboard/roadmap/${data.id}`);
-      } else {
-        router.push(`/dashboard`);
-      }
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setGenerating(false);
-      if (loadingInterval.current) clearInterval(loadingInterval.current);
-    }
+    onGenerate({
+      background: bg,
+      goal: gl,
+      timeCommitment,
+      skill: skill.trim(),
+      richSkill,
+    });
   };
 
   // ---------- Step content ----------
@@ -440,162 +428,62 @@ export default function GeneratePage() {
     }
   };
 
-  // ---------- Render ----------
   return (
-    <div className="min-h-screen bg-[#050508] text-white flex font-sans">
-      {/* ===== SIDEBAR ===== */}
-      <aside className="hidden md:flex flex-col w-64 h-screen sticky top-0 bg-[#0b0b12] border-r border-white/5">
-        <div className="h-16 flex items-center gap-2.5 px-6 border-b border-white/5">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-violet-500 to-blue-600 flex items-center justify-center font-bold text-sm shadow-lg shadow-violet-900/40">
-            S
-          </div>
-          <span className="font-semibold text-base tracking-tight">
-            SIR <span className="text-violet-400">AI</span>
-          </span>
+    <>
+      {/* Wizard card */}
+      <div className="bg-[#0b0b14] border border-white/[0.08] rounded-3xl p-6 sm:p-8 shadow-xl shadow-black/40">
+        <StepIndicator current={step} total={3} />
+        {renderStep()}
+
+        {/* Navigation buttons */}
+        <div className="mt-8 flex items-center justify-between">
+          <button
+            type="button"
+            onClick={handleBack}
+            disabled={step === 1}
+            className={`px-5 py-3 rounded-xl text-sm font-medium transition-all ${
+              step === 1
+                ? "text-white/20 cursor-not-allowed"
+                : "text-white/50 hover:text-white/80 hover:bg-white/[0.05]"
+            }`}
+          >
+            ← Peechhe
+          </button>
+
+          {step < 3 ? (
+            <button
+              type="button"
+              onClick={handleNext}
+              disabled={!canProceedFromStep(step)}
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-violet-600 to-blue-600 hover:opacity-90 disabled:opacity-30 disabled:cursor-not-allowed text-white font-semibold text-sm transition-all"
+            >
+              Aage → 
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled={generating || !canProceedFromStep(3)}
+              onClick={handleGenerate}
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-violet-600 via-fuchsia-600 to-blue-600 hover:opacity-90 disabled:opacity-30 disabled:cursor-not-allowed text-white font-semibold text-sm shadow-[0_0_20px_rgba(139,92,246,0.25)] transition-all"
+            >
+              {generating ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  Generating...
+                </>
+              ) : (
+                <>
+                  <SparkleIcon />
+                  Generate My Roadmap
+                </>
+              )}
+            </button>
+          )}
         </div>
-
-        <nav className="flex-1 px-3 py-4 space-y-1">
-          <button
-            onClick={() => router.push("/dashboard")}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-white/40 hover:text-white/70 hover:bg-white/[0.04] transition-all"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M3 3v18h18" />
-              <path d="m19 9-5 5-4-4-3 3" />
-            </svg>
-            My Roadmaps
-          </button>
-
-          <button
-            onClick={() => router.push("/dashboard/generate")}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium bg-white/10 text-white shadow-sm transition-all"
-          >
-            <span className="text-violet-400"><SparkleIcon /></span>
-            Generate New
-          </button>
-
-          <button className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-white/40 hover:text-white/70 hover:bg-white/[0.04] transition-all">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="3" />
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
-            </svg>
-            Settings
-          </button>
-        </nav>
-      </aside>
-
-      {/* ===== MAIN CONTENT ===== */}
-      <div className="flex-1 flex flex-col min-w-0">
-        {/* Mobile header */}
-        <header className="md:hidden h-16 flex items-center justify-between px-4 border-b border-white/5 bg-[#0b0b12]">
-          <button
-            onClick={() => router.push("/dashboard")}
-            className="p-2 rounded-lg text-white/50 hover:text-white hover:bg-white/5 transition-all"
-            aria-label="Back"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="m15 18-6-6 6-6" />
-            </svg>
-          </button>
-          <span className="font-semibold text-sm">SIR <span className="text-violet-400">AI</span></span>
-          <div className="w-8" />
-        </header>
-
-        <main className="flex-1 overflow-y-auto">
-          <div className="flex items-center justify-center min-h-[calc(100vh-4rem)] p-4">
-            <div className="w-full max-w-lg mx-auto">
-              <div className="relative">
-                {/* Ambient glows */}
-                <div className="absolute -top-40 -left-20 w-80 h-80 rounded-full bg-violet-700/10 blur-[120px] pointer-events-none" />
-                <div className="absolute -bottom-20 -right-20 w-60 h-60 rounded-full bg-blue-700/10 blur-[100px] pointer-events-none" />
-
-                <div className="relative">
-                  {/* Header */}
-                  <div className="text-center mb-8">
-                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-violet-500/30 bg-violet-500/10 text-xs font-medium text-violet-300 mb-5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
-                      Powered by Groq · Llama 3
-                    </div>
-                    <h1 className="text-2xl sm:text-3xl font-bold tracking-tight mb-2">
-                      SIR AI{" "}
-                      <span className="bg-gradient-to-r from-violet-400 via-fuchsia-400 to-blue-400 bg-clip-text text-transparent">
-                        Onboarding
-                      </span>
-                    </h1>
-                    <p className="text-white/40 text-sm leading-relaxed max-w-sm mx-auto">
-                      Do minute lagega — bas 3 sawaal. Phir hum aapka custom roadmap bana denge.
-                    </p>
-                  </div>
-
-                  {/* Wizard card */}
-                  <div className="bg-[#0b0b14] border border-white/[0.08] rounded-3xl p-6 sm:p-8 shadow-xl shadow-black/40">
-                    <StepIndicator current={step} total={3} />
-                    {renderStep()}
-
-                    {/* Navigation buttons */}
-                    <div className="mt-8 flex items-center justify-between">
-                      <button
-                        type="button"
-                        onClick={handleBack}
-                        disabled={step === 1}
-                        className={`px-5 py-3 rounded-xl text-sm font-medium transition-all ${
-                          step === 1
-                            ? "text-white/20 cursor-not-allowed"
-                            : "text-white/50 hover:text-white/80 hover:bg-white/[0.05]"
-                        }`}
-                      >
-                        ← Peechhe
-                      </button>
-
-                      {step < 3 ? (
-                        <button
-                          type="button"
-                          onClick={handleNext}
-                          disabled={!canProceedFromStep(step)}
-                          className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-violet-600 to-blue-600 hover:opacity-90 disabled:opacity-30 disabled:cursor-not-allowed text-white font-semibold text-sm transition-all"
-                        >
-                          Aage → 
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          disabled={generating || !canProceedFromStep(3)}
-                          onClick={handleGenerate}
-                          className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-violet-600 via-fuchsia-600 to-blue-600 hover:opacity-90 disabled:opacity-30 disabled:cursor-not-allowed text-white font-semibold text-sm shadow-[0_0_20px_rgba(139,92,246,0.25)] transition-all"
-                        >
-                          {generating ? (
-                            <>
-                              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                              Generating...
-                            </>
-                          ) : (
-                            <>
-                              <SparkleIcon />
-                              Generate My Roadmap
-                            </>
-                          )}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
-                  {error && (
-                    <div
-                      role="alert"
-                      className="mt-4 px-4 py-3 rounded-xl border border-red-500/30 bg-red-500/10 text-red-200 text-sm text-center"
-                    >
-                      {error}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        </main>
       </div>
 
-      {/* ===== GENERATING OVERLAY ===== */}
+      {/* Generating Overlay */}
       {generating && <GeneratingOverlay message={loadingMsg} />}
-    </div>
+    </>
   );
 }

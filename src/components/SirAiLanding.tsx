@@ -3,54 +3,36 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { HeroSearch } from "./HeroSearch";
-import { LoadingState } from "./LoadingState";
+import { OnboardingWizard, type OnboardingWizardProps } from "./OnboardingWizard";
 import { RoadmapDisplay } from "./RoadmapDisplay";
 import { AuthModal } from "./AuthModal";
-import { ProfilingModal } from "./ProfilingModal";
-
-const API_URL = "https://sir-ai-backend.onrender.com";
 
 export function SirAiLanding() {
   const router = useRouter();
-  const [skill, setSkill] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [roadmap, setRoadmap] = useState<string | null>(null);
   const [activeSkill, setActiveSkill] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [session, setSession] = useState<any>(null);
-  
+
   // Modal states
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-  const [isProfilingModalOpen, setIsProfilingModalOpen] = useState(false);
-  const [selectedLevel, setSelectedLevel] = useState<string | null>(null);
-  const [selectedGoal, setSelectedGoal] = useState<string | null>(null);
 
-  // Opens the profiling modal when user clicks "Generate Roadmap"
-  const handleGenerateClick = () => {
-    const trimmed = skill.trim();
-    if (!trimmed || isLoading) return;
-    setSelectedLevel(null);
-    setSelectedGoal(null);
-    setIsProfilingModalOpen(true);
-  };
-
-  // Called when user clicks "Generate Custom Roadmap" inside the modal
-  const generateRoadmapWithProfile = async (level: string, goal: string) => {
-    const trimmed = skill.trim();
-    if (!trimmed || isLoading) return;
-
+  // Called when user completes the 3-step onboarding wizard
+  const handleWizardGenerate: OnboardingWizardProps["onGenerate"] = async (data) => {
     setIsLoading(true);
     setError(null);
     setRoadmap(null);
-    setSelectedLevel(level);
-    setSelectedGoal(goal);
 
     try {
       const res = await fetch("/api/generate-roadmap", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ skill: trimmed, level, goal }),
+        body: JSON.stringify({
+          skill: data.richSkill,
+          level: data.background,
+          goal: `${data.goal} | Time: ${data.timeCommitment}`,
+        }),
       });
 
       if (!res.ok) {
@@ -60,13 +42,18 @@ export function SirAiLanding() {
         );
       }
 
-      const data = (await res.json()) as {
+      const result = (await res.json()) as {
         roadmap: string;
         skill: string;
+        id: string | null;
       };
-      setActiveSkill(data.skill ?? trimmed);
-      setRoadmap(data.roadmap);
-      setIsProfilingModalOpen(false);
+      setActiveSkill(data.skill);
+      setRoadmap(result.roadmap);
+
+      // If user is authenticated, redirect to dashboard roadmap page
+      if (session && result.id) {
+        router.push(`/dashboard/roadmap/${result.id}`);
+      }
     } catch (e) {
       setError(
         e instanceof Error
@@ -127,16 +114,16 @@ export function SirAiLanding() {
             <span className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white/70">
               Premium
             </span>
-            
+
             {session ? (
-              <button 
+              <button
                 onClick={() => router.push("/dashboard")}
                 className="px-6 py-2 ml-4 rounded-full bg-gradient-to-r from-emerald-500 to-teal-600 hover:opacity-90 text-white text-sm font-bold shadow-[0_0_15px_rgba(52,211,153,0.3)] transition-all"
               >
                 Go to Dashboard
               </button>
             ) : (
-              <button 
+              <button
                 onClick={() => setIsAuthModalOpen(true)}
                 className="px-6 py-2 ml-4 rounded-full bg-gradient-to-r from-violet-600 to-blue-600 hover:opacity-90 text-white text-sm font-bold shadow-[0_0_15px_rgba(139,92,246,0.3)] transition-all"
               >
@@ -148,14 +135,14 @@ export function SirAiLanding() {
           {/* Mobile auth button: always visible on small screens */}
           <div className="sm:hidden">
             {session ? (
-              <button 
+              <button
                 onClick={() => router.push("/dashboard")}
                 className="px-4 py-1.5 rounded-full bg-gradient-to-r from-emerald-500 to-teal-600 hover:opacity-90 text-white text-xs font-bold shadow-[0_0_12px_rgba(52,211,153,0.3)] transition-all"
               >
                 Dashboard
               </button>
             ) : (
-              <button 
+              <button
                 onClick={() => setIsAuthModalOpen(true)}
                 className="px-4 py-1.5 rounded-full bg-gradient-to-r from-violet-600 to-blue-600 hover:opacity-90 text-white text-xs font-bold shadow-[0_0_12px_rgba(139,92,246,0.3)] transition-all"
               >
@@ -187,12 +174,19 @@ export function SirAiLanding() {
           </p>
         </div>
 
-        <HeroSearch
-          skill={skill}
-          onSkillChange={setSkill}
-          onSubmit={handleGenerateClick}
-          isLoading={isLoading}
-        />
+        {/* 3-Step Onboarding Wizard — replaces the old HeroSearch + ProfilingModal */}
+        <div className="max-w-lg mx-auto">
+          <OnboardingWizard
+            onGenerate={handleWizardGenerate}
+            generating={isLoading}
+            loadingMessages={[
+              "Analyzing your profile and background...",
+              "Identifying the best path for your goal...",
+              "Building your custom execution missions...",
+              "Almost there — optimising your roadmap...",
+            ]}
+          />
+        </div>
 
         {error && (
           <div
@@ -203,8 +197,6 @@ export function SirAiLanding() {
           </div>
         )}
 
-        {isLoading && <LoadingState skill={skill.trim()} />}
-
         {roadmap && !isLoading && (
           <RoadmapDisplay skill={activeSkill} markdown={roadmap} />
         )}
@@ -214,19 +206,10 @@ export function SirAiLanding() {
         © {new Date().getFullYear()} SIR AI · Premium AI Learning Platform
       </footer>
 
-      {/* Profiling Modal — intercepts form submission */}
-      <ProfilingModal
-        isOpen={isProfilingModalOpen}
-        onClose={() => setIsProfilingModalOpen(false)}
-        topic={skill.trim()}
-        onGenerate={generateRoadmapWithProfile}
-        isLoading={isLoading}
-      />
-
       {/* Auth Modal */}
-      <AuthModal 
-        isOpen={isAuthModalOpen} 
-        onClose={() => setIsAuthModalOpen(false)} 
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
       />
     </div>
   );

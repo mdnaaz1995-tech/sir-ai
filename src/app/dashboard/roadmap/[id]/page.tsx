@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase";
 import { motion, AnimatePresence } from "framer-motion";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import confetti from "canvas-confetti";
 
 // ── Types ──
 interface TaskItem {
@@ -41,20 +42,66 @@ export default function RoadmapDetailPage() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const contentRef = useRef("");
 
+  // ── Proof of Work state ──
+  const [powUrl, setPowUrl] = useState("");
+  const [powSaving, setPowSaving] = useState(false);
+  const [powError, setPowError] = useState<string | null>(null);
+  const powInputRef = useRef<HTMLInputElement>(null);
+
   // ── Chat state ──
   const [chatMessages, setChatMessages] = useState<{ role: "user" | "ai"; content: string }[]>([
     { role: "ai", content: "Need help with this step? Ask me here!" },
   ]);
   const [chatHistoryLoaded, setChatHistoryLoaded] = useState(false);
 
+  // ── Celebration state ──
+  const confettiFiredRef = useRef(false);
+  const prevDoneCountRef = useRef(0);
+
+  // ── Confetti trigger on task completion ──
+  useEffect(() => {
+    if (!roadmap) return;
+    const tasks = roadmap.roadmap_content.match(/^\s*- \[([ x])]/gm) || [];
+    const doneCount = tasks.filter((t) => t.includes("x")).length;
+
+    if (doneCount > prevDoneCountRef.current && doneCount > 0 && !confettiFiredRef.current) {
+      confettiFiredRef.current = true;
+      const duration = 800;
+      const end = Date.now() + duration;
+      const frame = () => {
+        confetti({
+          particleCount: 4,
+          angle: 90,
+          spread: 120,
+          origin: { x: 0.5, y: 0.85 },
+          colors: ["#a78bfa", "#818cf8", "#f472b6", "#34d399", "#fbbf24"],
+          ticks: 40,
+          gravity: 0.6,
+          scalar: 0.8,
+        });
+        if (Date.now() < end) requestAnimationFrame(frame);
+      };
+      frame();
+    }
+    prevDoneCountRef.current = doneCount;
+  }, [roadmap?.roadmap_content]);
+
+  // ── Streaming state ──
+  const [isChatLoading, setIsChatLoading] = useState(false);
+  const [streamingContent, setStreamingContent] = useState("");
+  const chatEndRef = useRef<HTMLDivElement>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+  const [chatInput, setChatInput] = useState("");
+  const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
+
   // ── Fetch / clear chat history when task changes ──
   useEffect(() => {
     if (!roadmapId || !isInitialIndexLoaded) return;
 
     const fetchChatHistory = async () => {
-      // Clear the previous task's chat from the UI first
       setChatMessages([{ role: "ai", content: "Need help with this step? Ask me here!" }]);
       setChatHistoryLoaded(false);
+      setStreamingContent("");
 
       const { data, error } = await supabase
         .from("task_chats")
@@ -72,14 +119,20 @@ export default function RoadmapDetailPage() {
     fetchChatHistory();
   }, [roadmapId, activeTaskIndex, isInitialIndexLoaded]);
 
-  const [inputValue, setInputValue] = useState("");
-  const [isChatLoading, setIsChatLoading] = useState(false);
-  const chatEndRef = useRef<HTMLDivElement>(null);
-
-  // Auto-scroll chat to bottom
+  // ── Auto-scroll to bottom on new messages or streaming content ──
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [chatMessages]);
+    if (shouldAutoScroll) {
+      chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [chatMessages, streamingContent, shouldAutoScroll]);
+
+  // Detect if user has scrolled up — pause auto-scroll
+  const handleChatScroll = useCallback(() => {
+    const el = chatContainerRef.current;
+    if (!el) return;
+    const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+    setShouldAutoScroll(isAtBottom);
+  }, []);
 
   // ── Parse roadmap into phases with tasks ──
   const parsePhases = useCallback((markdown: string): PhaseGroup[] => {
@@ -91,19 +144,15 @@ export default function RoadmapDetailPage() {
       const line = lines[i];
       const trimmed = line.trim();
 
-      // Detect phase headers
       const phaseMatch = trimmed.match(
         /^#{2,4}\s+(Phase\s+\d+[:\s\-\–—]*(.*))/i
       );
       if (phaseMatch) {
-        currentPhaseTitle = phaseMatch[1]
-          .replace(/[*#]/g, "")
-          .trim();
+        currentPhaseTitle = phaseMatch[1].replace(/[*#]/g, "").trim();
         groups.push({ title: currentPhaseTitle, tasks: [] });
         continue;
       }
 
-      // Also detect bold phase headers like **Phase 1: ...**
       const boldMatch = trimmed.match(
         /^\*\*Phase\s+\d+[:\s\-\–—]*(.*?)\*\*/i
       );
@@ -113,12 +162,10 @@ export default function RoadmapDetailPage() {
         continue;
       }
 
-      // Detect checkbox lines
       const checkboxMatch = trimmed.match(/^[-*+]\s+\[([ xX])\]\s+(.*)/);
       if (checkboxMatch) {
         const checked = checkboxMatch[1].toLowerCase() === "x";
         const taskText = checkboxMatch[2];
-        // Add to current phase group, or create "Overview" if no phase yet
         if (groups.length === 0) {
           groups.push({ title: "Overview", tasks: [] });
         }
@@ -130,7 +177,6 @@ export default function RoadmapDetailPage() {
       }
     }
 
-    // If no phases found, put all tasks in "Tasks"
     if (groups.length === 0) {
       const allTasks: TaskItem[] = [];
       for (let i = 0; i < lines.length; i++) {
@@ -182,9 +228,7 @@ export default function RoadmapDetailPage() {
   // ── Fetch roadmap ──
   useEffect(() => {
     const fetchData = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
+      const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
         router.push("/");
         return;
@@ -194,7 +238,6 @@ export default function RoadmapDetailPage() {
         setLoading(false);
         return;
       }
-      // Try with current_task_index first; fallback if column doesn't exist
       let data: any;
       let fe: any;
 
@@ -205,7 +248,6 @@ export default function RoadmapDetailPage() {
         .single();
 
       if (result.error && result.error.message?.includes("current_task_index")) {
-        // Column doesn't exist yet — query without it
         const fallback = await supabase
           .from("roadmaps")
           .select("topic, roadmap_content, created_at")
@@ -221,7 +263,6 @@ export default function RoadmapDetailPage() {
         setError("Roadmap not found");
       } else {
         setRoadmap(data);
-        // Restore saved task index if valid (column may not exist yet)
         if (typeof (data as any).current_task_index === "number" && (data as any).current_task_index >= 0) {
           setActiveTaskIndex((data as any).current_task_index);
         }
@@ -295,7 +336,6 @@ export default function RoadmapDetailPage() {
   const saveTaskIndex = useCallback(
     async (index: number) => {
       if (!roadmapId) return;
-      // Optimistic — no loading state to keep it seamless
       const { error } = await supabase
         .from("roadmaps")
         .update({ current_task_index: index })
@@ -307,30 +347,87 @@ export default function RoadmapDetailPage() {
     [roadmapId]
   );
 
-  // ── Mark complete & advance ──
-  const handleMarkCompleteAndNext = useCallback(() => {
+  // ── Helper: check if a task is a milestone (last task of its phase) ──
+  const isMilestone = useCallback(
+    (taskIndex: number): boolean => {
+      if (!roadmap) return false;
+      const phases = parsePhases(roadmap.roadmap_content);
+      const all = flatTasks(phases);
+      const task = all[taskIndex];
+      if (!task) return false;
+      // Find which phase this task belongs to
+      for (const phase of phases) {
+        const idx = phase.tasks.indexOf(task);
+        if (idx !== -1) {
+          // It's a milestone if it's the last task in its phase
+          return idx === phase.tasks.length - 1;
+        }
+      }
+      return false;
+    },
+    [roadmap, parsePhases, flatTasks]
+  );
+
+  // ── Mark complete & advance (with PoW check) ──
+  const handleMarkCompleteAndNext = useCallback(async () => {
     if (!roadmap) return;
     const phases = parsePhases(roadmap.roadmap_content);
     const allTasks = flatTasks(phases);
     if (allTasks.length === 0) return;
 
     const current = allTasks[activeTaskIndex];
-    // Check the box if not already checked
+    const isMilestoneTask = isMilestone(activeTaskIndex);
+
+    // If it's a milestone and not already checked, require PoW
+    if (isMilestoneTask && current && !current.checked) {
+      const url = powUrl.trim();
+      if (!url || !/^https?:\/\/.+/.test(url)) {
+        setPowError("❌ Sahi URL daalo — http:// ya https:// se shuru hona chahiye!");
+        powInputRef.current?.focus();
+        return;
+      }
+      setPowError(null);
+
+      // Save the PoW URL to the project_progress table
+      setPowSaving(true);
+      const { error: powErr } = await supabase.from("project_progress").upsert(
+        {
+          user_id: (await supabase.auth.getUser()).data.user?.id,
+          roadmap_id: roadmapId,
+          task_index: activeTaskIndex,
+          task_text: current.text,
+          proof_url: url,
+          completed_at: new Date().toISOString(),
+        },
+        { onConflict: "roadmap_id, task_index" }
+      );
+      setPowSaving(false);
+
+      if (powErr) {
+        console.error("Failed to save PoW:", powErr.message);
+        setPowError("Database error — please try again.");
+        return;
+      }
+    }
+
+    // Clear PoW input for next task
+    setPowUrl("");
+
+    // Now toggle the checkbox
     if (current && !current.checked) {
       toggleLine(current.lineIndex, false);
     }
 
+    // Advance to next task
     if (activeTaskIndex < allTasks.length - 1) {
       const nextIndex = activeTaskIndex + 1;
       setActiveTaskIndex(nextIndex);
       saveTaskIndex(nextIndex);
     } else {
-      // Last task — still save the final index
       saveTaskIndex(activeTaskIndex);
     }
-  }, [roadmap, parsePhases, flatTasks, activeTaskIndex, toggleLine, saveTaskIndex]);
+  }, [roadmap, parsePhases, flatTasks, activeTaskIndex, toggleLine, saveTaskIndex, isMilestone, powUrl, roadmapId]);
 
-  // ── Skip: just advance without checking ──
   const handleSkip = useCallback(() => {
     if (!roadmap) return;
     const phases = parsePhases(roadmap.roadmap_content);
@@ -340,23 +437,32 @@ export default function RoadmapDetailPage() {
     const nextIndex = Math.min(activeTaskIndex + 1, allTasks.length - 1);
     setActiveTaskIndex(nextIndex);
     saveTaskIndex(nextIndex);
+    setPowUrl("");
+    setPowError(null);
   }, [roadmap, parsePhases, flatTasks, activeTaskIndex, saveTaskIndex]);
 
-  // ── Send chat message ──
+  // ── Reset PoW when task changes ──
+  useEffect(() => {
+    setPowUrl("");
+    setPowError(null);
+  }, [activeTaskIndex]);
+
+  // ── Send chat message with streaming ──
   const handleSendMessage = useCallback(async () => {
-    const trimmed = inputValue.trim();
+    const trimmed = chatInput.trim();
     if (!trimmed || isChatLoading || !roadmap) return;
 
-    // Derive the current task from roadmap content inline
     const phases = parsePhases(roadmap.roadmap_content);
     const all = flatTasks(phases);
     const task = all[activeTaskIndex];
     if (!task) return;
 
     const userMsg = trimmed;
-    setInputValue("");
+    setChatInput("");
     setChatMessages((prev) => [...prev, { role: "user" as const, content: userMsg }]);
     setIsChatLoading(true);
+    setStreamingContent("");
+    setShouldAutoScroll(true);
 
     try {
       const res = await fetch("/api/task-chat", {
@@ -369,52 +475,79 @@ export default function RoadmapDetailPage() {
         }),
       });
 
-      const data = await res.json();
-      const reply = data.reply || data.message;
-      if (res.ok && reply) {
-        setChatMessages((prev) => {
-          const updated = [...prev, { role: "ai" as const, content: reply }];
-          // Background upsert to Supabase — non-blocking
-          supabase
-            .from("task_chats")
-            .upsert(
-              { roadmap_id: roadmapId, task_index: activeTaskIndex, messages: updated },
-              { onConflict: "roadmap_id, task_index" }
-            )
-            .then(({ error }) => {
-              if (error) console.error("Failed to save chat history:", error.message);
-            });
-          return updated;
-        });
-      } else {
-        setChatMessages((prev) => {
-          const updated = [
-            ...prev,
-            { role: "ai" as const, content: "Sorry, I couldn't process that. Please try again." },
-          ];
-          supabase
-            .from("task_chats")
-            .upsert(
-              { roadmap_id: roadmapId, task_index: activeTaskIndex, messages: updated },
-              { onConflict: "roadmap_id, task_index" }
-            )
-            .then(({ error }) => {
-              if (error) console.error("Failed to save chat history:", error.message);
-            });
-          return updated;
-        });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error((errData as { error?: string }).error || `Request failed (${res.status})`);
       }
-    } catch {
+
+      // Read the streaming response
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error("No response body");
+
+      const decoder = new TextDecoder();
+      let accumulated = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        // Parse SSE format: "data: {...}\n\n"
+        const lines = chunk.split("\n");
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            const jsonStr = line.slice(6).trim();
+            if (jsonStr === "[DONE]") continue;
+            try {
+              const parsed = JSON.parse(jsonStr);
+              const delta =
+                parsed.choices?.[0]?.delta?.content ||
+                parsed.choices?.[0]?.text ||
+                "";
+              if (delta) {
+                accumulated += delta;
+                setStreamingContent(accumulated);
+              }
+            } catch {
+              // Skip malformed JSON lines
+            }
+          }
+        }
+      }
+
+      // Streaming complete — finalize the AI message
+      if (accumulated) {
+        setChatMessages((prev) => {
+          const updated = [...prev, { role: "ai" as const, content: accumulated }];
+          // Save to Supabase in the background
+          supabase
+            .from("task_chats")
+            .upsert(
+              { roadmap_id: roadmapId, task_index: activeTaskIndex, messages: updated },
+              { onConflict: "roadmap_id, task_index" }
+            )
+            .then(({ error }) => {
+              if (error) console.error("Failed to save chat history:", error.message);
+            });
+          return updated;
+        });
+        setStreamingContent("");
+      } else {
+        throw new Error("Empty response from AI");
+      }
+    } catch (err: any) {
+      const errMsg = err.message || "Network error. Please check your connection and try again.";
       setChatMessages((prev) => [
         ...prev,
-        { role: "ai" as const, content: "Network error. Please check your connection and try again." },
+        { role: "ai" as const, content: errMsg },
       ]);
+      setStreamingContent("");
     } finally {
       setIsChatLoading(false);
     }
-  }, [inputValue, isChatLoading, roadmap, activeTaskIndex, parsePhases, flatTasks]);
+  }, [chatInput, isChatLoading, roadmap, activeTaskIndex, parsePhases, flatTasks, roadmapId]);
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSendMessage();
@@ -431,7 +564,6 @@ export default function RoadmapDetailPage() {
     [saveTaskIndex]
   );
 
-  // ── Date formatting ──
   const fmtDate = (iso: string) =>
     new Date(iso).toLocaleDateString("en-US", {
       month: "short",
@@ -468,6 +600,9 @@ export default function RoadmapDetailPage() {
   const phases = parsePhases(roadmap.roadmap_content);
   const allTasks = flatTasks(phases);
   const currentTask = allTasks[activeTaskIndex] || null;
+  const isMilestoneTask = currentTask ? isMilestone(activeTaskIndex) : false;
+  const needsPoW = isMilestoneTask && currentTask && !currentTask.checked;
+  const isPoWValid = /^https?:\/\/.+/.test(powUrl.trim());
 
   return (
     <div className="min-h-screen bg-[#050508] text-white">
@@ -486,31 +621,11 @@ export default function RoadmapDetailPage() {
           >
             <div className="flex items-center gap-2">
               {toast.type === "success" ? (
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                   <polyline points="20 6 9 17 4 12" />
                 </svg>
               ) : (
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                   <circle cx="12" cy="12" r="10" />
                   <line x1="12" x2="12" y1="8" y2="12" />
                   <line x1="12" x2="12.01" y1="16" y2="16" />
@@ -529,24 +644,13 @@ export default function RoadmapDetailPage() {
             onClick={() => router.push("/dashboard")}
             className="flex items-center gap-2 text-sm text-white/40 hover:text-white transition-all"
           >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="m15 18-6-6 6-6" />
             </svg>
             Back to Dashboard
           </button>
 
           <div className="flex items-center gap-3">
-            {/* Progress badge */}
             <div className="hidden sm:flex items-center gap-2 text-xs text-white/50">
               <div className="h-1.5 w-20 bg-white/10 rounded-full overflow-hidden">
                 <div
@@ -582,17 +686,7 @@ export default function RoadmapDetailPage() {
         className="fixed bottom-6 right-6 z-50 md:hidden w-14 h-14 rounded-full bg-violet-600 shadow-2xl shadow-violet-900/50 border border-violet-500/30 flex items-center justify-center text-white hover:bg-violet-500 active:scale-95 transition-all"
         aria-label="Show task list"
       >
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          width="22"
-          height="22"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
+        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <line x1="8" x2="21" y1="6" y2="6" />
           <line x1="8" x2="21" y1="12" y2="12" />
           <line x1="8" x2="21" y1="18" y2="18" />
@@ -629,17 +723,7 @@ export default function RoadmapDetailPage() {
                   onClick={() => setMobileSidebarOpen(false)}
                   className="w-7 h-7 rounded-lg bg-white/10 flex items-center justify-center text-white/50 hover:text-white transition-colors"
                 >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M18 6 6 18" />
                     <path d="m6 6 12 12" />
                   </svg>
@@ -686,7 +770,7 @@ export default function RoadmapDetailPage() {
 
       {/* ── Grid Layout: Sidebar + Focus Area ── */}
       <div className="flex h-[calc(100dvh-57px)]">
-        {/* ── LEFT SIDEBAR (w-1/3, hidden on mobile) ── */}
+        {/* ── LEFT SIDEBAR ── */}
         <aside className="hidden md:flex md:w-1/3 lg:w-[30%] xl:w-[28%] flex-col border-r border-white/5 bg-black/10 overflow-y-auto">
           <div className="p-4 border-b border-white/5">
             <h2 className="text-sm font-semibold text-white/80 tracking-wide">
@@ -696,27 +780,20 @@ export default function RoadmapDetailPage() {
               {fmtDate(roadmap.created_at)}
             </p>
           </div>
-
           <nav className="flex-1 p-3 space-y-1">
             {phases.map((phase, pIdx) => (
               <div key={pIdx} className="mb-2">
-                {/* Phase title */}
                 <div className="px-2 py-1.5 text-xs font-medium text-white/40 uppercase tracking-wider">
                   {phase.title}
                 </div>
-
-                {/* Tasks within this phase */}
                 <div className="ml-1 space-y-0.5">
                   {phase.tasks.map((task, tIdx) => {
-                    const globalIdx =
-                      allTasks.indexOf(task);
+                    const globalIdx = allTasks.indexOf(task);
                     const isActive = globalIdx === activeTaskIndex;
                     return (
                       <button
                         key={tIdx}
-                        onClick={() =>
-                          handleSidebarNav(globalIdx)
-                        }
+                        onClick={() => handleSidebarNav(globalIdx)}
                         className={`w-full text-left px-3 py-1.5 rounded-lg text-xs transition-all duration-200 ${
                           isActive
                             ? "bg-violet-500/15 text-violet-200 border border-violet-500/30"
@@ -735,7 +812,6 @@ export default function RoadmapDetailPage() {
                 </div>
               </div>
             ))}
-
             {phases.length === 0 && (
               <p className="text-xs text-white/30 px-2 py-4 text-center">
                 No tasks found in this roadmap.
@@ -744,7 +820,7 @@ export default function RoadmapDetailPage() {
           </nav>
         </aside>
 
-        {/* ── MAIN FOCUS AREA (w-2/3) ── */}
+        {/* ── MAIN FOCUS AREA ── */}
         <main className="flex-1 flex flex-col overflow-y-auto">
           <div className="flex-1 p-4 md:p-6 lg:p-8 max-w-4xl mx-auto w-full">
             {currentTask ? (
@@ -757,14 +833,8 @@ export default function RoadmapDetailPage() {
                   transition={{ type: "spring", stiffness: 120, damping: 14 }}
                   className="relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-zinc-900/80 to-zinc-950/80 backdrop-blur-xl shadow-2xl shadow-violet-950/30"
                 >
-                  {/* Glow */}
-                  <div
-                    className="pointer-events-none absolute -top-20 -right-20 w-40 h-40 rounded-full bg-violet-600/15 blur-[80px]"
-                    aria-hidden
-                  />
-
+                  <div className="pointer-events-none absolute -top-20 -right-20 w-40 h-40 rounded-full bg-violet-600/15 blur-[80px]" aria-hidden />
                   <div className="relative p-6 md:p-8 lg:p-10">
-                    {/* Task index label */}
                     <div className="flex items-center gap-2 mb-4">
                       <span className="px-2.5 py-0.5 rounded-full bg-violet-500/15 border border-violet-500/30 text-violet-300 text-xs font-medium">
                         Task {activeTaskIndex + 1} of {allTasks.length}
@@ -776,45 +846,77 @@ export default function RoadmapDetailPage() {
                       )}
                     </div>
 
-                    {/* Task text — large, premium */}
                     <h3
                       className={`text-2xl md:text-3xl lg:text-4xl font-bold leading-snug tracking-tight ${
-                        currentTask.checked
-                          ? "line-through text-white/40"
-                          : "text-white"
+                        currentTask.checked ? "line-through text-white/40" : "text-white"
                       }`}
                     >
                       {currentTask.text}
                     </h3>
 
-                    {/* Divider */}
+                    {/* ── Proof of Work Section (Milestone tasks only) ── */}
+                    {needsPoW && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: "auto" }}
+                        className="mt-6 p-5 rounded-2xl border border-amber-500/30 bg-amber-500/5"
+                      >
+                        <div className="flex items-start gap-3">
+                          <span className="text-xl mt-0.5">🔒</span>
+                          <div className="flex-1 min-w-0">
+                            <h4 className="text-sm font-bold text-amber-300 mb-1">
+                              Phase Milestone — Proof of Work Required
+                            </h4>
+                            <p className="text-xs text-amber-300/60 mb-3">
+                              Bina Proof of Work ke aage nahi badh sakte! Apna live project ya code ka link share karo.
+                            </p>
+                            <input
+                              ref={powInputRef}
+                              type="url"
+                              value={powUrl}
+                              onChange={(e) => {
+                                setPowUrl(e.target.value);
+                                setPowError(null);
+                              }}
+                              placeholder="https://github.com/... ya https://your-project.vercel.app"
+                              className="w-full px-4 py-3 rounded-xl bg-[#050508]/80 border border-amber-500/20 text-sm text-white placeholder:text-white/20 outline-none focus:border-amber-500/50 transition-all"
+                            />
+                            {powError && (
+                              <p className="mt-2 text-xs text-red-400">{powError}</p>
+                            )}
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
+
                     <div className="my-6 h-px bg-gradient-to-r from-violet-500/30 via-blue-500/20 to-transparent" />
 
-                    {/* Action buttons */}
                     <div className="flex flex-col sm:flex-row gap-3">
                       <button
                         onClick={handleMarkCompleteAndNext}
-                        disabled={allTasks.length === 0}
+                        disabled={
+                          allTasks.length === 0 ||
+                          powSaving ||
+                          (needsPoW && !isPoWValid)
+                        }
                         className="group relative w-full sm:flex-1 py-4 sm:py-3.5 px-6 rounded-xl font-semibold text-white overflow-hidden transition-all duration-300 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98]"
                       >
                         <span className="absolute inset-0 bg-gradient-to-r from-violet-600 to-blue-600" />
                         <span className="absolute inset-0 bg-gradient-to-r from-violet-500 to-blue-500 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
                         <span className="relative flex items-center justify-center gap-2">
-                          {activeTaskIndex < allTasks.length - 1
-                            ? "Mark Complete & Next"
-                            : "Mark Complete"}
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            width="16"
-                            height="16"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2.5"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            className="transition-transform group-hover:translate-x-0.5"
-                          >
+                          {powSaving ? (
+                            <>
+                              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                              Saving Proof...
+                            </>
+                          ) : activeTaskIndex < allTasks.length - 1 ? (
+                            <>
+                              {needsPoW && "🔒 "}Mark Complete & Next
+                            </>
+                          ) : (
+                            "Mark Complete"
+                          )}
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="transition-transform group-hover:translate-x-0.5">
                             <polyline points="20 6 9 17 4 12" />
                           </svg>
                         </span>
@@ -845,10 +947,17 @@ export default function RoadmapDetailPage() {
                   </div>
 
                   {/* Chat messages area */}
-                  <div className="p-5 min-h-[160px] max-h-[260px] sm:max-h-[320px] overflow-y-auto space-y-3">
+                  <div
+                    ref={chatContainerRef}
+                    onScroll={handleChatScroll}
+                    className="p-5 min-h-[180px] max-h-[300px] sm:max-h-[360px] overflow-y-auto space-y-3"
+                  >
                     {chatMessages.map((msg, idx) => (
-                      <div
-                        key={idx}
+                      <motion.div
+                        key={`${idx}-${msg.role}`}
+                        initial={{ opacity: 0, y: 12, scale: 0.98 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        transition={{ duration: 0.25, ease: "easeOut" }}
                         className={`flex items-start gap-3 ${msg.role === "user" ? "flex-row-reverse" : ""}`}
                       >
                         {msg.role === "ai" ? (
@@ -861,7 +970,7 @@ export default function RoadmapDetailPage() {
                           </div>
                         )}
                         <div className="flex-1 max-w-[85%]">
-                        <div
+                          <div
                             className={`p-3 rounded-xl text-sm leading-relaxed prose prose-invert prose-sm max-w-none ${
                               msg.role === "ai"
                                 ? "bg-zinc-800/60 border border-white/5 text-white/70"
@@ -899,45 +1008,84 @@ export default function RoadmapDetailPage() {
                             )}
                           </div>
                         </div>
-                      </div>
+                      </motion.div>
                     ))}
-                    {isChatLoading && (
-                      <div className="flex items-center gap-2 text-xs text-white/40 ml-10">
-                        <div className="w-3 h-3 border-[1.5px] border-violet-500 border-t-transparent rounded-full animate-spin" />
-                        Thinking...
+
+                    {/* Streaming message bubble */}
+                    {isChatLoading && streamingContent && (
+                      <motion.div
+                        key="streaming"
+                        initial={{ opacity: 0, y: 12 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="flex items-start gap-3"
+                      >
+                        <div className="w-7 h-7 rounded-full bg-gradient-to-br from-violet-500 to-blue-600 flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">
+                          S
+                        </div>
+                        <div className="flex-1 max-w-[85%]">
+                          <div className="p-3 rounded-xl text-sm leading-relaxed bg-zinc-800/60 border border-white/5 text-white/70 prose prose-invert prose-sm max-w-none">
+                            <ReactMarkdown
+                              remarkPlugins={[remarkGfm]}
+                              components={{
+                                ul: ({ ...props }) => <ul className="list-disc ml-5 mt-2 space-y-1" {...props} />,
+                                ol: ({ ...props }) => <ol className="list-decimal ml-5 mt-2 space-y-1" {...props} />,
+                                li: ({ ...props }) => <li className="text-white/80" {...props} />,
+                                p: ({ ...props }) => <p className="mb-2 last:mb-0" {...props} />,
+                                strong: ({ ...props }) => <strong className="font-semibold text-white" {...props} />,
+                                code: ({ ...props }) => <code className="px-1 py-0.5 rounded bg-white/10 text-sm text-violet-300" {...props} />,
+                              }}
+                            >
+                              {streamingContent + " ▌"}
+                            </ReactMarkdown>
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
+
+                    {/* Thinking indicator */}
+                    {isChatLoading && !streamingContent && (
+                      <div className="flex items-start gap-3">
+                        <div className="w-7 h-7 rounded-full bg-gradient-to-br from-violet-500 to-blue-600 flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">
+                          S
+                        </div>
+                        <div className="flex-1 max-w-[85%]">
+                          <div className="p-3 rounded-xl bg-zinc-800/60 border border-white/5">
+                            <div className="flex items-center gap-2 text-xs text-white/40">
+                              <div className="w-3 h-3 border-[1.5px] border-violet-500 border-t-transparent rounded-full animate-spin" />
+                              Thinking...
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     )}
+
                     <div ref={chatEndRef} />
                   </div>
 
                   {/* Input area */}
                   <div className="p-4 border-t border-white/5">
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={inputValue}
-                        onChange={(e) => setInputValue(e.target.value)}
+                    <div className="flex gap-2 items-end">
+                      <textarea
+                        value={chatInput}
+                        onChange={(e) => setChatInput(e.target.value)}
                         onKeyDown={handleKeyDown}
-                        placeholder="Ask a question about this task..."
+                        placeholder="Ask a question about this task... (Enter to send, Shift+Enter for new line)"
                         disabled={isChatLoading}
-                        className="flex-1 px-4 py-3 sm:py-2.5 rounded-xl bg-zinc-800/60 border border-white/10 text-sm text-white placeholder:text-white/20 outline-none focus:border-violet-500/40 transition-colors disabled:opacity-50"
+                        rows={1}
+                        className="flex-1 px-4 py-3 rounded-xl bg-zinc-800/60 border border-white/10 text-sm text-white placeholder:text-white/20 outline-none focus:border-violet-500/40 transition-colors disabled:opacity-50 resize-none min-h-[44px] max-h-[120px] leading-relaxed"
+                        style={{ height: "auto" }}
+                        onInput={(e) => {
+                          const el = e.currentTarget;
+                          el.style.height = "auto";
+                          el.style.height = Math.min(el.scrollHeight, 120) + "px";
+                        }}
                       />
                       <button
                         onClick={handleSendMessage}
-                        disabled={!inputValue.trim() || isChatLoading}
-                        className="px-5 py-3 sm:py-2.5 rounded-xl bg-violet-600 border border-violet-500/30 text-white text-sm font-medium hover:bg-violet-500 transition-colors disabled:opacity-40 disabled:cursor-not-allowed active:scale-95"
+                        disabled={!chatInput.trim() || isChatLoading}
+                        className="px-5 py-3 rounded-xl bg-violet-600 border border-violet-500/30 text-white text-sm font-medium hover:bg-violet-500 transition-colors disabled:opacity-40 disabled:cursor-not-allowed active:scale-95 shrink-0"
                       >
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          width="18"
-                          height="18"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                           <path d="M22 2L11 13" />
                           <path d="M22 2L15 22L11 13L2 9L22 2Z" />
                         </svg>
