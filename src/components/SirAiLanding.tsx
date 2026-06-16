@@ -115,7 +115,8 @@ export function SirAiLanding() {
               SIR <span className="text-violet-400">AI</span>
             </span>
           </div>
-          
+
+          {/* Desktop nav: hidden on mobile */}
           <nav className="hidden sm:flex items-center gap-6 text-sm text-white/50">
             <span className="hover:text-white/80 transition-colors cursor-default">
               Roadmaps
@@ -143,6 +144,25 @@ export function SirAiLanding() {
               </button>
             )}
           </nav>
+
+          {/* Mobile auth button: always visible on small screens */}
+          <div className="sm:hidden">
+            {session ? (
+              <button 
+                onClick={() => router.push("/dashboard")}
+                className="px-4 py-1.5 rounded-full bg-gradient-to-r from-emerald-500 to-teal-600 hover:opacity-90 text-white text-xs font-bold shadow-[0_0_12px_rgba(52,211,153,0.3)] transition-all"
+              >
+                Dashboard
+              </button>
+            ) : (
+              <button 
+                onClick={() => setIsAuthModalOpen(true)}
+                className="px-4 py-1.5 rounded-full bg-gradient-to-r from-violet-600 to-blue-600 hover:opacity-90 text-white text-xs font-bold shadow-[0_0_12px_rgba(139,92,246,0.3)] transition-all"
+              >
+                Login
+              </button>
+            )}
+          </div>
         </div>
       </header>
 
