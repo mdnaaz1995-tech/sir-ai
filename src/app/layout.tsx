@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -16,7 +16,20 @@ export const metadata: Metadata = {
   title: "SIR AI — Premium AI Learning Platform",
   description:
     "Generate world-class, phase-by-phase skill mastery roadmaps powered by AI.",
-  manifest: "/manifest.json", // <--- Ye line PWA ko enable karti hai
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "SIR AI",
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#4f46e5",
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  userScalable: false,
 };
 
 export default function RootLayout({
@@ -30,9 +43,27 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <head>
-        {/* Yeh link browser ko batata hai ki ye ek installable app hai */}
         <link rel="manifest" href="/manifest.json" />
         <meta name="theme-color" content="#4f46e5" />
+        <meta
+          name="viewport"
+          content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no"
+        />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        <meta name="apple-touch-fullscreen" content="yes" />
+        <meta name="msapplication-tap-highlight" content="no" />
+        <link
+          rel="apple-touch-icon"
+          sizes="192x192"
+          href="/icon-192x192.png"
+        />
+        <link
+          rel="apple-touch-icon"
+          sizes="512x512"
+          href="/icon-512x512.png"
+        />
       </head>
       <body className="min-h-full flex flex-col font-sans">
         {children}

@@ -6,7 +6,8 @@ import { supabase } from "@/lib/supabase";
 import { HeroSearch } from "./HeroSearch";
 import { LoadingState } from "./LoadingState";
 import { RoadmapDisplay } from "./RoadmapDisplay";
-import { AuthModal } from "./AuthModal"; // Naya Modal Import kiya
+import { AuthModal } from "./AuthModal";
+import { ProfilingModal } from "./ProfilingModal";
 
 const API_URL = "https://sir-ai-backend.onrender.com";
 
@@ -19,28 +20,43 @@ export function SirAiLanding() {
   const [error, setError] = useState<string | null>(null);
   const [session, setSession] = useState<any>(null);
   
-  // Naya State Modal ko kholne aur band karne ke liye
+  // Modal states
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [isProfilingModalOpen, setIsProfilingModalOpen] = useState(false);
+  const [selectedLevel, setSelectedLevel] = useState<string | null>(null);
+  const [selectedGoal, setSelectedGoal] = useState<string | null>(null);
 
-  const generateRoadmap = async () => {
+  // Opens the profiling modal when user clicks "Generate Roadmap"
+  const handleGenerateClick = () => {
+    const trimmed = skill.trim();
+    if (!trimmed || isLoading) return;
+    setSelectedLevel(null);
+    setSelectedGoal(null);
+    setIsProfilingModalOpen(true);
+  };
+
+  // Called when user clicks "Generate Custom Roadmap" inside the modal
+  const generateRoadmapWithProfile = async (level: string, goal: string) => {
     const trimmed = skill.trim();
     if (!trimmed || isLoading) return;
 
     setIsLoading(true);
     setError(null);
     setRoadmap(null);
+    setSelectedLevel(level);
+    setSelectedGoal(goal);
 
     try {
-      const res = await fetch(`${API_URL}/generate_roadmap`, {
+      const res = await fetch("/api/generate-roadmap", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ skill: trimmed }),
+        body: JSON.stringify({ skill: trimmed, level, goal }),
       });
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(
-          (err as { detail?: string }).detail ?? `Request failed (${res.status})`
+          (err as { error?: string }).error ?? `Request failed (${res.status})`
         );
       }
 
@@ -50,11 +66,12 @@ export function SirAiLanding() {
       };
       setActiveSkill(data.skill ?? trimmed);
       setRoadmap(data.roadmap);
+      setIsProfilingModalOpen(false);
     } catch (e) {
       setError(
         e instanceof Error
           ? e.message
-          : "Could not reach SIR AI. Is the backend running on port 8000?"
+          : "Could not generate roadmap. Please try again."
       );
     } finally {
       setIsLoading(false);
@@ -153,7 +170,7 @@ export function SirAiLanding() {
         <HeroSearch
           skill={skill}
           onSkillChange={setSkill}
-          onSubmit={generateRoadmap}
+          onSubmit={handleGenerateClick}
           isLoading={isLoading}
         />
 
@@ -177,7 +194,16 @@ export function SirAiLanding() {
         © {new Date().getFullYear()} SIR AI · Premium AI Learning Platform
       </footer>
 
-      {/* Auth Modal Component yahan mount hua hai */}
+      {/* Profiling Modal — intercepts form submission */}
+      <ProfilingModal
+        isOpen={isProfilingModalOpen}
+        onClose={() => setIsProfilingModalOpen(false)}
+        topic={skill.trim()}
+        onGenerate={generateRoadmapWithProfile}
+        isLoading={isLoading}
+      />
+
+      {/* Auth Modal */}
       <AuthModal 
         isOpen={isAuthModalOpen} 
         onClose={() => setIsAuthModalOpen(false)} 

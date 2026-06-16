@@ -28,13 +28,8 @@ app.add_middleware(
 
 class SkillRequest(BaseModel):
     skill: str
-
-SYSTEM_PROMPT = (
-    "You are the world's most elite skill mentor. Generate a professional, "
-    "phase-by-phase mastery roadmap. Use Markdown, bold headings, and emojis. "
-    "Include: Vision, Prerequisites, 4-5 Phases with 'Proof of Work' tasks, "
-    "Accelerators, and a Professional Toolkit."
-)
+    level: str = "Beginner"
+    goal: str = "Get a Job"
 
 @app.get("/")
 async def root():
@@ -45,12 +40,24 @@ async def generate_roadmap(request: SkillRequest):
     try:
         print(f"--- DEBUG: Request received for skill: {request.skill} ---")
         
-        # 1. Generate AI Roadmap
+        # 1. Build dynamic system prompt with level & goal
+        system_prompt = (
+            "You are the world's most elite skill mentor. Generate a professional, "
+            "phase-by-phase mastery roadmap. Use Markdown, bold headings, and emojis. "
+            "Include: Vision, Prerequisites, 4-5 Phases with 'Proof of Work' tasks, "
+            "Accelerators, and a Professional Toolkit.\n\n"
+            f"The user wants to learn {request.skill}. They are currently at a "
+            f"{request.level} level, and their primary goal is {request.goal}. "
+            "You MUST strictly tailor the difficulty, prerequisites, and milestones "
+            "to match this specific level and goal."
+        )
+
+        # 2. Generate AI Roadmap
         completion = groq_client.chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": f"I want to master the skill: {request.skill}."}
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"I want to master {request.skill}. I'm at {request.level} level and my goal is {request.goal}."}
             ],
             temperature=0.7,
             max_tokens=2048
