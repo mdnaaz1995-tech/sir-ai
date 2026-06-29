@@ -474,6 +474,21 @@ export default function GeneratePage() {
             Generate New
           </button>
 
+          <button
+            onClick={() => router.push("/showcase")}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-white/40 hover:text-white/70 hover:bg-white/[0.04] transition-all"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5C7 4 7 7 7 7" />
+              <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5C17 4 17 7 17 7" />
+              <path d="M4 22h16" />
+              <path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22" />
+              <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22" />
+              <path d="M18 2H6v7a6 6 0 0 0 12 0V2Z" />
+            </svg>
+            Wall of Fame
+          </button>
+
           <button className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-white/40 hover:text-white/70 hover:bg-white/[0.04] transition-all">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="12" cy="12" r="3" />
@@ -528,7 +543,7 @@ export default function GeneratePage() {
                   </div>
 
                   {/* Wizard card */}
-                  <div className="bg-[#0b0b14] border border-white/[0.08] rounded-3xl p-6 sm:p-8 shadow-xl shadow-black/40">
+                  <div className="bg-brand-card border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-xl shadow-black/40">
                     <StepIndicator current={step} total={3} />
                     {renderStep()}
 
@@ -552,7 +567,7 @@ export default function GeneratePage() {
                           type="button"
                           onClick={handleNext}
                           disabled={!canProceedFromStep(step)}
-                          className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-violet-600 to-blue-600 hover:opacity-90 disabled:opacity-30 disabled:cursor-not-allowed text-white font-semibold text-sm transition-all"
+                          className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-brand-primary hover:opacity-90 disabled:opacity-30 disabled:cursor-not-allowed text-white font-semibold text-sm transition-all"
                         >
                           Aage → 
                         </button>
@@ -561,7 +576,7 @@ export default function GeneratePage() {
                           type="button"
                           disabled={generating || !canProceedFromStep(3)}
                           onClick={handleGenerate}
-                          className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-violet-600 via-fuchsia-600 to-blue-600 hover:opacity-90 disabled:opacity-30 disabled:cursor-not-allowed text-white font-semibold text-sm shadow-[0_0_20px_rgba(139,92,246,0.25)] transition-all"
+                          className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-brand-primary hover:opacity-90 disabled:opacity-30 disabled:cursor-not-allowed text-white font-semibold text-sm shadow-[0_0_20px_rgba(99,102,241,0.25)] transition-all"
                         >
                           {generating ? (
                             <>

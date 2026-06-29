@@ -109,15 +109,15 @@ function OptionGrid({
               }}
               className={`group relative text-left p-4 rounded-2xl border transition-all duration-200 ${
                 isSel
-                  ? "bg-violet-600/15 border-violet-500/50 shadow-[0_0_16px_rgba(139,92,246,0.12)]"
-                  : "bg-white/[0.03] border-white/[0.06] hover:bg-white/[0.06] hover:border-white/[0.12]"
+                  ? "bg-brand-primary/15 border-brand-primary/50 shadow-[0_0_16px_rgba(99,102,241,0.12)]"
+                  : "bg-brand-card border-slate-800 hover:bg-white/[0.06] hover:border-white/[0.12]"
               }`}
             >
               <div className="flex items-start gap-3">
                 <span className="text-xl mt-0.5">{opt.emoji}</span>
                 <div className="flex-1 min-w-0">
                   <div className={`text-sm font-semibold mb-0.5 transition-colors ${
-                    isSel ? "text-violet-300" : "text-white/70 group-hover:text-white/90"
+                    isSel ? "text-brand-primary/90" : "text-brand-muted group-hover:text-brand-text"
                   }`}>
                     {opt.label}
                   </div>
@@ -125,10 +125,10 @@ function OptionGrid({
                 </div>
                 <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5 transition-all ${
                   isSel
-                    ? "border-violet-500 bg-violet-500/30"
+                    ? "border-brand-primary bg-brand-primary/30"
                     : "border-white/20"
                 }`}>
-                  {isSel && <div className="w-2 h-2 rounded-full bg-violet-400" />}
+                  {isSel && <div className="w-2 h-2 rounded-full bg-brand-primary" />}
                 </div>
               </div>
             </button>
@@ -145,11 +145,11 @@ function OptionGrid({
               setShowCustom(true);
               onSelect("__custom__");
             }}
-            className={`text-xs font-medium px-4 py-1.5 rounded-lg border transition-all ${
-              selected === "__custom__"
-                ? "bg-violet-600/15 border-violet-500/40 text-violet-300"
-                : "text-white/30 border-white/[0.06] hover:text-white/50 hover:border-white/[0.12]"
-            }`}
+              className={`text-xs font-medium px-4 py-1.5 rounded-lg border transition-all ${
+                selected === "__custom__"
+                  ? "bg-brand-primary/15 border-brand-primary/40 text-brand-primary/90"
+                  : "text-white/30 border-white/[0.06] hover:text-white/50 hover:border-white/[0.12]"
+              }`}
           >
             ✏️ Kuch aur batao...
           </button>
@@ -161,7 +161,7 @@ function OptionGrid({
               value={customValue}
               onChange={(e) => onCustomChange(e.target.value)}
               placeholder="Apne words mein likho..."
-              className="flex-1 bg-white/[0.05] border border-white/[0.1] rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-white/20 outline-none focus:border-violet-500/50 focus:bg-violet-900/10 transition-all"
+              className="flex-1 bg-white/[0.05] border border-white/[0.1] rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-white/20 outline-none focus:border-brand-primary/50 focus:bg-brand-primary/10 transition-all"
             />
             <button
               type="button"
@@ -313,7 +313,7 @@ export function OnboardingWizard({
         return (
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
             <div className="text-center mb-6">
-              <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-500/20 to-orange-600/20 border border-amber-500/20 mb-3">
+              <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-brand-primary/20 border border-brand-primary/20 mb-3">
                 <span className="text-2xl">👤</span>
               </div>
               <h2 className="text-xl font-bold tracking-tight">
@@ -337,7 +337,7 @@ export function OnboardingWizard({
         return (
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
             <div className="text-center mb-6">
-              <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500/20 to-cyan-600/20 border border-blue-500/20 mb-3">
+              <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-brand-primary/20 border border-brand-primary/20 mb-3">
                 <span className="text-2xl">🎯</span>
               </div>
               <h2 className="text-xl font-bold tracking-tight">
@@ -361,7 +361,7 @@ export function OnboardingWizard({
         return (
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
             <div className="text-center mb-6">
-              <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-teal-600/20 border border-emerald-500/20 mb-3">
+              <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-brand-primary/20 border border-brand-primary/20 mb-3">
                 <span className="text-2xl">⏳</span>
               </div>
               <h2 className="text-xl font-bold tracking-tight">
@@ -419,7 +419,7 @@ export function OnboardingWizard({
                 value={skill}
                 onChange={(e) => setSkill(e.target.value)}
                 placeholder="e.g., Full-Stack Blockchain, AI Engineering, Rust..."
-                className="w-full bg-white/[0.05] border border-white/[0.1] rounded-2xl px-5 py-4 text-base text-white placeholder:text-white/20 outline-none focus:border-violet-500/50 focus:bg-violet-900/10 transition-all"
+                className="w-full bg-white/[0.05] border border-white/[0.1] rounded-2xl px-5 py-4 text-base text-white placeholder:text-white/20 outline-none focus:border-brand-primary/50 focus:bg-brand-primary/10 transition-all"
                 autoFocus
               />
             </div>
@@ -431,7 +431,7 @@ export function OnboardingWizard({
   return (
     <>
       {/* Wizard card */}
-      <div className="bg-[#0b0b14] border border-white/[0.08] rounded-3xl p-6 sm:p-8 shadow-xl shadow-black/40">
+      <div className="bg-brand-card border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-xl shadow-black/40">
         <StepIndicator current={step} total={3} />
         {renderStep()}
 
@@ -455,7 +455,7 @@ export function OnboardingWizard({
               type="button"
               onClick={handleNext}
               disabled={!canProceedFromStep(step)}
-              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-violet-600 to-blue-600 hover:opacity-90 disabled:opacity-30 disabled:cursor-not-allowed text-white font-semibold text-sm transition-all"
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-brand-primary hover:opacity-90 disabled:opacity-30 disabled:cursor-not-allowed text-white font-semibold text-sm transition-all"
             >
               Aage → 
             </button>
@@ -464,7 +464,7 @@ export function OnboardingWizard({
               type="button"
               disabled={generating || !canProceedFromStep(3)}
               onClick={handleGenerate}
-              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-violet-600 via-fuchsia-600 to-blue-600 hover:opacity-90 disabled:opacity-30 disabled:cursor-not-allowed text-white font-semibold text-sm shadow-[0_0_20px_rgba(139,92,246,0.25)] transition-all"
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-brand-primary hover:opacity-90 disabled:opacity-30 disabled:cursor-not-allowed text-white font-semibold text-sm shadow-[0_0_20px_rgba(99,102,241,0.25)] transition-all"
             >
               {generating ? (
                 <>

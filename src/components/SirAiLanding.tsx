@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { OnboardingWizard, type OnboardingWizardProps } from "./OnboardingWizard";
@@ -78,7 +79,7 @@ export function SirAiLanding() {
   }, []);
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-[#050508]">
+    <div className="relative min-h-screen overflow-hidden bg-brand-bg">
       <div
         className="pointer-events-none fixed inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_-20%,rgba(120,80,255,0.25),transparent)]"
         aria-hidden
@@ -111,6 +112,20 @@ export function SirAiLanding() {
             <span className="hover:text-white/80 transition-colors cursor-default">
               Mentorship
             </span>
+            <Link
+              href="/showcase"
+              className="hover:text-white/80 transition-colors cursor-pointer inline-flex items-center gap-1"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5C7 4 7 7 7 7" />
+                <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5C17 4 17 7 17 7" />
+                <path d="M4 22h16" />
+                <path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22" />
+                <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22" />
+                <path d="M18 2H6v7a6 6 0 0 0 12 0V2Z" />
+              </svg>
+              Wall of Fame
+            </Link>
             <span className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white/70">
               Premium
             </span>
@@ -118,14 +133,14 @@ export function SirAiLanding() {
             {session ? (
               <button
                 onClick={() => router.push("/dashboard")}
-                className="px-6 py-2 ml-4 rounded-full bg-gradient-to-r from-emerald-500 to-teal-600 hover:opacity-90 text-white text-sm font-bold shadow-[0_0_15px_rgba(52,211,153,0.3)] transition-all"
+                className="px-6 py-2 ml-4 rounded-full bg-brand-primary hover:opacity-90 text-white text-sm font-bold shadow-[0_0_15px_rgba(99,102,241,0.3)] transition-all"
               >
                 Go to Dashboard
               </button>
             ) : (
               <button
                 onClick={() => setIsAuthModalOpen(true)}
-                className="px-6 py-2 ml-4 rounded-full bg-gradient-to-r from-violet-600 to-blue-600 hover:opacity-90 text-white text-sm font-bold shadow-[0_0_15px_rgba(139,92,246,0.3)] transition-all"
+                className="px-6 py-2 ml-4 rounded-full bg-brand-primary hover:opacity-90 text-white text-sm font-bold shadow-[0_0_15px_rgba(99,102,241,0.3)] transition-all"
               >
                 Login / Sign Up
               </button>
@@ -137,14 +152,14 @@ export function SirAiLanding() {
             {session ? (
               <button
                 onClick={() => router.push("/dashboard")}
-                className="px-4 py-1.5 rounded-full bg-gradient-to-r from-emerald-500 to-teal-600 hover:opacity-90 text-white text-xs font-bold shadow-[0_0_12px_rgba(52,211,153,0.3)] transition-all"
+                className="px-4 py-1.5 rounded-full bg-brand-primary hover:opacity-90 text-white text-xs font-bold shadow-[0_0_12px_rgba(99,102,241,0.3)] transition-all"
               >
                 Dashboard
               </button>
             ) : (
               <button
                 onClick={() => setIsAuthModalOpen(true)}
-                className="px-4 py-1.5 rounded-full bg-gradient-to-r from-violet-600 to-blue-600 hover:opacity-90 text-white text-xs font-bold shadow-[0_0_12px_rgba(139,92,246,0.3)] transition-all"
+                className="px-4 py-1.5 rounded-full bg-brand-primary hover:opacity-90 text-white text-xs font-bold shadow-[0_0_12px_rgba(99,102,241,0.3)] transition-all"
               >
                 Login
               </button>

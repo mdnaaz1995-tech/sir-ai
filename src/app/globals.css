@@ -1,8 +1,14 @@
 @import "tailwindcss";
 
 :root {
-  --background: #050508;
-  --foreground: #f4f4f8;
+  --background: #0F172A;
+  --foreground: #F8FAFC;
+  --brand-bg: #0F172A;
+  --brand-card: #1E293B;
+  --brand-primary: #6366F1;
+  --brand-accent: #00D2FF;
+  --brand-text: #F8FAFC;
+  --brand-muted: #94A3B8;
   --accent-violet: #8b5cf6;
   --accent-blue: #3b82f6;
   --glass: rgba(255, 255, 255, 0.04);
@@ -12,7 +18,14 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
+  --color-brand-bg: var(--brand-bg);
+  --color-brand-card: var(--brand-card);
+  --color-brand-primary: var(--brand-primary);
+  --color-brand-accent: var(--brand-accent);
+  --color-brand-text: var(--brand-text);
+  --color-brand-muted: var(--brand-muted);
+  --font-sans: var(--font-roboto), var(--font-geist-sans), system-ui, sans-serif;
+  --font-heading: var(--font-poppins), var(--font-geist-sans), system-ui, sans-serif;
   --font-mono: var(--font-geist-mono);
 }
 
@@ -23,7 +36,12 @@ html {
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  font-family: var(--font-roboto), var(--font-geist-sans), system-ui, sans-serif;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-poppins), var(--font-geist-sans), system-ui, sans-serif;
+  font-weight: 600;
 }
 
 @keyframes shimmer {
@@ -79,21 +97,21 @@ body {
 .prose-roadmap h2,
 .prose-roadmap h3,
 .prose-roadmap h4 {
-  color: #f4f4f8;
+  color: #F8FAFC;
   font-weight: 600;
   margin-top: 1rem;
   margin-bottom: 0.5rem;
 }
 
 .prose-roadmap p {
-  color: #c4c4d4;
+  color: #94A3B8;
   line-height: 1.7;
   margin-bottom: 0.75rem;
 }
 
 .prose-roadmap ul,
 .prose-roadmap ol {
-  color: #b8b8cc;
+  color: #94A3B8;
   padding-left: 1.25rem;
   margin-bottom: 0.75rem;
 }
@@ -103,11 +121,11 @@ body {
 }
 
 .prose-roadmap strong {
-  color: #e8e8f4;
+  color: #F8FAFC;
 }
 
 .prose-roadmap code {
-  background: rgba(139, 92, 246, 0.15);
+  background: rgba(99, 102, 241, 0.15);
   color: #c4b5fd;
   padding: 0.15rem 0.4rem;
   border-radius: 0.25rem;
@@ -115,7 +133,28 @@ body {
 }
 
 .prose-roadmap a {
-  color: #a78bfa;
+  color: #6366F1;
   text-decoration: underline;
   text-underline-offset: 2px;
+}
+
+/* Brand utility classes */
+.bg-brand-bg {
+  background-color: var(--brand-bg);
+}
+
+.bg-brand-card {
+  background-color: var(--brand-card);
+}
+
+.text-brand-text {
+  color: var(--brand-text);
+}
+
+.text-brand-muted {
+  color: var(--brand-muted);
+}
+
+.border-brand-accent {
+  border-color: var(--brand-accent);
 }
