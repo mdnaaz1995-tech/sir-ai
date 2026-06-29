@@ -47,12 +47,32 @@ export default function RoadmapDetailPage() {
   const [powSaving, setPowSaving] = useState(false);
   const [powError, setPowError] = useState<string | null>(null);
   const powInputRef = useRef<HTMLInputElement>(null);
+  // ── New multimodal submission state ──
+  const [submissionType, setSubmissionType] = useState<'url' | 'image' | 'audio'>('url');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+
+  // ── Verification state ──
+  const [verifying, setVerifying] = useState(false);
+  const [verifyResult, setVerifyResult] = useState<{
+    verified: boolean | null;
+    feedback: string;
+    confidence_score: number;
+  } | null>(null);
+  const [isMilestoneCompleted, setIsMilestoneCompleted] = useState(false);
+  const [lastSubmittedImageId, setLastSubmittedImageId] = useState<string | null>(null);
+  const lastSubmittedImageUrlRef = useRef<string | null>(null);
 
   // ── Chat state ──
   const [chatMessages, setChatMessages] = useState<{ role: "user" | "ai"; content: string }[]>([
     { role: "ai", content: "Need help with this step? Ask me here!" },
   ]);
   const [chatHistoryLoaded, setChatHistoryLoaded] = useState(false);
+
+  // ── AI context state (retry tracking for SOS Protocol) ──
+  const [retryCount, setRetryCount] = useState(0);
+  const [lastError, setLastError] = useState<string | null>(null);
+  const [isStuck, setIsStuck] = useState(false);
+  const retryThreshold = 3;
 
   // ── Celebration state ──
   const confettiFiredRef = useRef(false);
@@ -105,13 +125,18 @@ export default function RoadmapDetailPage() {
 
       const { data, error } = await supabase
         .from("task_chats")
-        .select("messages")
+        .select("messages, retry_count, last_error, is_stuck")
         .eq("roadmap_id", roadmapId)
         .eq("task_index", activeTaskIndex)
         .single();
 
       if (!error && data?.messages && Array.isArray(data.messages) && data.messages.length > 0) {
         setChatMessages(data.messages);
+      }
+      if (!error && data) {
+        setRetryCount((data as any).retry_count ?? 0);
+        setLastError((data as any).last_error ?? null);
+        setIsStuck((data as any).is_stuck ?? false);
       }
       setChatHistoryLoaded(true);
     };
@@ -378,8 +403,71 @@ export default function RoadmapDetailPage() {
     const current = allTasks[activeTaskIndex];
     const isMilestoneTask = isMilestone(activeTaskIndex);
 
-    // If it's a milestone and not already checked, require PoW
-    if (isMilestoneTask && current && !current.checked) {
+    // ── Safety guard: validate task data is non-null before proceeding ──
+    if (!roadmapId) {
+      console.log("[handleMarkCompleteAndNext] ⚠️ Task data is invalid: roadmap_id is null/undefined. Exiting gracefully to avoid crash.");
+      return;
+    }
+    if (activeTaskIndex === undefined || activeTaskIndex === null) {
+      console.log("[handleMarkCompleteAndNext] ⚠️ Task data is invalid: task_index is null/undefined. Exiting gracefully to avoid crash.");
+      return;
+    }
+    if (!current) {
+      console.log("[handleMarkCompleteAndNext] ⚠️ No task found at index", activeTaskIndex, "– exiting gracefully.");
+      return;
+    }
+
+    // ── Resolve authenticated user_id once at the top ──
+    const userId = (await supabase.auth.getUser()).data.user?.id;
+    if (!userId) {
+      console.log("[handleMarkCompleteAndNext] ⚠️ No authenticated user found. Exiting gracefully.");
+      return;
+    }
+
+    // Build payload for multimodal submission
+    // ── Upload handling for image/audio submissions ──
+    let uploadedUrl: string | null = null;
+    if (submissionType !== 'url' && selectedFile) {
+      // Generate a unique path to avoid collisions: <userId>/<timestamp>_<filename>
+      const timestamp = Date.now();
+      const safeName = selectedFile.name.replace(/\s+/g, '_');
+      const filePath = `${userId}/${timestamp}_${safeName}`;
+      const { error: uploadErr } = await supabase.storage
+        .from('pow_uploads')
+        .upload(filePath, selectedFile);
+      if (uploadErr) {
+        console.error('Upload error:', uploadErr.message);
+        showToast('File upload failed – please try again', 'error');
+        setPowSaving(false);
+        return;
+      }
+      // Retrieve the public URL for the uploaded file
+      const { data: publicData } = supabase.storage.from('pow_uploads').getPublicUrl(filePath);
+      uploadedUrl = publicData?.publicUrl || null;
+    }
+
+    // Build the submission payload matching the project_progress table schema
+    const submittedUrl = submissionType === 'url' ? powUrl.trim() : null;
+    const basePayload: any = {
+      user_id: userId,
+      roadmap_id: roadmapId,
+      task_index: activeTaskIndex,
+      task_text: current.text,
+      proof_url: submittedUrl,
+      completed_at: new Date().toISOString(),
+      submission_type: submissionType,
+      submission_data:
+        submissionType === 'url'
+          ? { url: submittedUrl }
+          : submissionType === 'image' && uploadedUrl
+          ? { file_url: uploadedUrl, file_name: selectedFile?.name }
+          : submissionType === 'audio' && uploadedUrl
+          ? { audio_url: uploadedUrl }
+          : null,
+    };
+
+    // Validation for URL mode (PoW still required for milestones)
+    if (isMilestoneTask && submissionType === 'url' && current && !current.checked) {
       const url = powUrl.trim();
       if (!url || !/^https?:\/\/.+/.test(url)) {
         setPowError("❌ Sahi URL daalo — http:// ya https:// se shuru hona chahiye!");
@@ -387,33 +475,68 @@ export default function RoadmapDetailPage() {
         return;
       }
       setPowError(null);
+    }
 
-      // Save the PoW URL to the project_progress table
-      setPowSaving(true);
-      const { error: powErr } = await supabase.from("project_progress").upsert(
-        {
-          user_id: (await supabase.auth.getUser()).data.user?.id,
-          roadmap_id: roadmapId,
-          task_index: activeTaskIndex,
-          task_text: current.text,
-          proof_url: url,
-          completed_at: new Date().toISOString(),
-        },
-        { onConflict: "roadmap_id, task_index" }
-      );
-      setPowSaving(false);
+    // Save to Supabase
+    setPowSaving(true);
+    const { error: saveErr } = await supabase.from("project_progress").upsert(
+      basePayload,
+      { onConflict: "roadmap_id, task_index" }
+    );
+    setPowSaving(false);
 
-      if (powErr) {
-        console.error("Failed to save PoW:", powErr.message);
-        setPowError("Database error — please try again.");
-        return;
+    if (saveErr) {
+      console.error("Failed to save submission:", saveErr.message);
+      setPowError("Database error — please try again.");
+      return;
+    }
+
+    // ── Trigger AI Vision verification for image submissions ──
+    if (submissionType === "image") {
+      // Fetch the saved submission ID to send to the verification API
+      const { data: savedSubmission } = await supabase
+        .from("project_progress")
+        .select("id")
+        .eq("roadmap_id", roadmapId)
+        .eq("task_index", activeTaskIndex)
+        .single();
+
+      if (savedSubmission?.id) {
+        setLastSubmittedImageId(savedSubmission.id);
+        setIsMilestoneCompleted(true);
+        // Auto-trigger verification in the background
+        try {
+          console.log("[dashboard] Triggering PoW verification for submission:", savedSubmission.id);
+          const verifyRes = await fetch("/api/verify-pow", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ submission_id: savedSubmission.id }),
+          });
+          const verifyData = await verifyRes.json();
+          if (verifyRes.ok) {
+            setVerifyResult({
+              verified: verifyData.verified,
+              feedback: verifyData.feedback,
+              confidence_score: verifyData.confidence_score,
+            });
+            showToast(
+              `🔍 AI Verification: ${verifyData.verified ? "✅ Passed" : "⚠️ Needs Review"} — ${verifyData.feedback}`,
+              verifyData.verified ? "success" : "error"
+            );
+          } else {
+            console.error("[dashboard] Verification API error:", verifyData.error);
+          }
+        } catch (verifyErr) {
+          console.error("[dashboard] Failed to call verification API:", verifyErr);
+        }
       }
     }
 
-    // Clear PoW input for next task
+    // Clear inputs for next task
     setPowUrl("");
+    setSelectedFile(null);
 
-    // Now toggle the checkbox
+    // Toggle checkbox
     if (current && !current.checked) {
       toggleLine(current.lineIndex, false);
     }
@@ -426,7 +549,7 @@ export default function RoadmapDetailPage() {
     } else {
       saveTaskIndex(activeTaskIndex);
     }
-  }, [roadmap, parsePhases, flatTasks, activeTaskIndex, toggleLine, saveTaskIndex, isMilestone, powUrl, roadmapId]);
+  }, [roadmap, parsePhases, flatTasks, activeTaskIndex, toggleLine, saveTaskIndex, isMilestone, powUrl, roadmapId, submissionType, selectedFile, showToast]);
 
   const handleSkip = useCallback(() => {
     if (!roadmap) return;
@@ -441,10 +564,54 @@ export default function RoadmapDetailPage() {
     setPowError(null);
   }, [roadmap, parsePhases, flatTasks, activeTaskIndex, saveTaskIndex]);
 
-  // ── Reset PoW when task changes ──
+  // ── Verification handler: calls /api/verify-pow with a saved submission ──
+  const handleVerifySubmission = useCallback(async () => {
+    if (!lastSubmittedImageId) {
+      showToast("No submission to verify. Please upload and save first.", "error");
+      return;
+    }
+
+    setVerifying(true);
+    setVerifyResult(null);
+    try {
+      const verifyRes = await fetch("/api/verify-pow", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ submission_id: lastSubmittedImageId }),
+      });
+      const verifyData = await verifyRes.json();
+
+      if (verifyRes.ok) {
+        setVerifyResult({
+          verified: verifyData.verified,
+          feedback: verifyData.feedback,
+          confidence_score: verifyData.confidence_score,
+        });
+        showToast(
+          `🔍 AI Verification: ${verifyData.verified ? "✅ Passed" : "⚠️ Needs Review"} — ${verifyData.feedback}`,
+          verifyData.verified ? "success" : "error"
+        );
+      } else {
+        console.error("[dashboard] Verification API error:", verifyData.error);
+        showToast(`Verification failed: ${verifyData.error}`, "error");
+      }
+    } catch (verifyErr: any) {
+      console.error("[dashboard] Failed to call verification API:", verifyErr);
+      showToast("Verification request failed — please try again", "error");
+    } finally {
+      setVerifying(false);
+    }
+  }, [lastSubmittedImageId, showToast]);
+
+  // ── Reset PoW + verification state when task changes ──
   useEffect(() => {
     setPowUrl("");
     setPowError(null);
+    setVerifyResult(null);
+    setVerifying(false);
+    setLastSubmittedImageId(null);
+    lastSubmittedImageUrlRef.current = null;
+    setIsMilestoneCompleted(false);
   }, [activeTaskIndex]);
 
   // ── Send chat message with streaming ──
@@ -472,6 +639,8 @@ export default function RoadmapDetailPage() {
           topic: roadmap.topic,
           currentTask: task.text,
           userMessage: userMsg,
+          roadmapId,
+          taskIndex: activeTaskIndex,
         }),
       });
 
@@ -517,13 +686,23 @@ export default function RoadmapDetailPage() {
 
       // Streaming complete — finalize the AI message
       if (accumulated) {
+        // Success — reset retry tracking
+        setRetryCount(0);
+        setLastError(null);
         setChatMessages((prev) => {
           const updated = [...prev, { role: "ai" as const, content: accumulated }];
-          // Save to Supabase in the background
+          // Save to Supabase in the background (reset retry fields on success)
           supabase
             .from("task_chats")
             .upsert(
-              { roadmap_id: roadmapId, task_index: activeTaskIndex, messages: updated },
+              {
+                roadmap_id: roadmapId,
+                task_index: activeTaskIndex,
+                messages: updated,
+                retry_count: 0,
+                last_error: null,
+                is_stuck: false,
+              },
               { onConflict: "roadmap_id, task_index" }
             )
             .then(({ error }) => {
@@ -542,10 +721,34 @@ export default function RoadmapDetailPage() {
         { role: "ai" as const, content: errMsg },
       ]);
       setStreamingContent("");
+
+      // ── SOS Protocol: increment retry_count & track error ──
+      const newRetryCount = retryCount + 1;
+      const newIsStuck = newRetryCount >= retryThreshold;
+      setRetryCount(newRetryCount);
+      setLastError(errMsg);
+      setIsStuck(newIsStuck);
+
+      // Persist the updated retry tracking to the database
+      supabase
+        .from("task_chats")
+        .upsert(
+          {
+            roadmap_id: roadmapId,
+            task_index: activeTaskIndex,
+            retry_count: newRetryCount,
+            last_error: errMsg,
+            is_stuck: newIsStuck,
+          },
+          { onConflict: "roadmap_id, task_index" }
+        )
+        .then(({ error }) => {
+          if (error) console.error("Failed to save AI context state:", error.message);
+        });
     } finally {
       setIsChatLoading(false);
     }
-  }, [chatInput, isChatLoading, roadmap, activeTaskIndex, parsePhases, flatTasks, roadmapId]);
+  }, [chatInput, isChatLoading, roadmap, activeTaskIndex, parsePhases, flatTasks, roadmapId, retryCount, retryThreshold]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -574,8 +777,8 @@ export default function RoadmapDetailPage() {
   // ── Render: Loading ──
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#050508] flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
+      <div className="min-h-screen bg-brand-bg flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-brand-primary border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
@@ -583,7 +786,7 @@ export default function RoadmapDetailPage() {
   // ── Render: Error ──
   if (error || !roadmap) {
     return (
-      <div className="min-h-screen bg-[#050508] flex flex-col items-center justify-center gap-4 text-white/60">
+      <div className="min-h-screen bg-brand-bg flex flex-col items-center justify-center gap-4 text-white/60">
         <p>{error || "Roadmap not found"}</p>
         <button
           onClick={() => router.push("/dashboard")}
@@ -602,10 +805,11 @@ export default function RoadmapDetailPage() {
   const currentTask = allTasks[activeTaskIndex] || null;
   const isMilestoneTask = currentTask ? isMilestone(activeTaskIndex) : false;
   const needsPoW = isMilestoneTask && currentTask && !currentTask.checked;
-  const isPoWValid = /^https?:\/\/.+/.test(powUrl.trim());
+  // PoW validation only applies when the submission type is URL
+  const isPoWValid = submissionType === 'url' ? /^https?:\/\/.+/.test(powUrl.trim()) : true;
 
   return (
-    <div className="min-h-screen bg-[#050508] text-white">
+    <div className="min-h-screen bg-brand-bg text-white">
       {/* ── Toast ── */}
       <AnimatePresence>
         {toast && (
@@ -831,7 +1035,7 @@ export default function RoadmapDetailPage() {
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ type: "spring", stiffness: 120, damping: 14 }}
-                  className="relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-zinc-900/80 to-zinc-950/80 backdrop-blur-xl shadow-2xl shadow-violet-950/30"
+                  className="relative overflow-hidden rounded-2xl border border-slate-800 bg-brand-card backdrop-blur-xl shadow-2xl shadow-violet-950/30"
                 >
                   <div className="pointer-events-none absolute -top-20 -right-20 w-40 h-40 rounded-full bg-violet-600/15 blur-[80px]" aria-hidden />
                   <div className="relative p-6 md:p-8 lg:p-10">
@@ -855,7 +1059,20 @@ export default function RoadmapDetailPage() {
                     </h3>
 
                     {/* ── Proof of Work Section (Milestone tasks only) ── */}
-                    {needsPoW && (
+                     {/* ── Submission Type Selector ── */}
+                     <div className="flex gap-2 mb-4">
+                       {(['url', 'image', 'audio'] as const).map((type) => (
+                         <button
+                           key={type}
+                           type="button"
+                           onClick={() => setSubmissionType(type)}
+                           className={`px-3 py-1 rounded ${submissionType === type ? 'bg-brand-primary text-white' : 'bg-gray-700 text-gray-300'} transition`}
+                         >
+                           {type.toUpperCase()}
+                         </button>
+                       ))}
+                     </div>
+                     {needsPoW && (
                       <motion.div
                         initial={{ opacity: 0, height: 0 }}
                         animate={{ opacity: 1, height: "auto" }}
@@ -870,17 +1087,65 @@ export default function RoadmapDetailPage() {
                             <p className="text-xs text-amber-300/60 mb-3">
                               Bina Proof of Work ke aage nahi badh sakte! Apna live project ya code ka link share karo.
                             </p>
-                            <input
-                              ref={powInputRef}
-                              type="url"
-                              value={powUrl}
-                              onChange={(e) => {
-                                setPowUrl(e.target.value);
-                                setPowError(null);
-                              }}
-                              placeholder="https://github.com/... ya https://your-project.vercel.app"
-                              className="w-full px-4 py-3 rounded-xl bg-[#050508]/80 border border-amber-500/20 text-sm text-white placeholder:text-white/20 outline-none focus:border-amber-500/50 transition-all"
-                            />
+                             {/* Conditional input based on submission type */}
+                             {submissionType === 'url' && (
+                               <input
+                                 ref={powInputRef}
+                                 type="url"
+                                 value={powUrl}
+                                 onChange={(e) => {
+                                   setPowUrl(e.target.value);
+                                   setPowError(null);
+                                 }}
+                                 placeholder="https://github.com/... ya https://your-project.vercel.app"
+                                 className="w-full px-4 py-3 rounded-xl bg-[#050508]/80 border border-amber-500/20 text-sm text-white placeholder:text-white/20 outline-none focus:border-amber-500/50 transition-all"
+                               />
+                             )}
+                             {submissionType === 'image' && (
+                               <div className="flex flex-col items-center justify-center border-2 border-dashed border-slate-700 bg-brand-card/50 p-6 rounded-xl">
+                                 {selectedFile ? (
+                                   <div className="flex flex-col items-center gap-2">
+                                     <img src={URL.createObjectURL(selectedFile)} alt="preview" className="max-h-32 rounded" />
+                                     <button
+                                       type="button"
+                                       onClick={() => setSelectedFile(null)}
+                                       className="px-2 py-1 bg-red-600 text-white rounded"
+                                     >
+                                       Remove
+                                     </button>
+                                   </div>
+                                 ) : (
+                                   <label className="cursor-pointer flex flex-col items-center">
+                                     <span className="text-sm text-gray-300 mb-2">Drag & drop or click to upload</span>
+                                     <input
+                                       type="file"
+                                       accept="image/*"
+                                       className="hidden"
+                                       onChange={(e) => {
+                                         const file = e.target.files?.[0] || null;
+                                         setSelectedFile(file);
+                                         setPowError(null);
+                                       }}
+                                     />
+                                   </label>
+                                 )}
+                               </div>
+                             )}
+                             {submissionType === 'audio' && (
+                               <div className="flex items-center gap-2 p-4 border-2 border-dashed border-slate-700 bg-brand-card/50 rounded-xl">
+                                 <button
+                                   type="button"
+                                   className="px-3 py-1 bg-brand-primary text-white rounded"
+                                   onClick={() => {
+                                     // Mock recording – in real implementation hook MediaRecorder
+                                     alert('Recording started (mock)');
+                                   }}
+                                 >
+                                   Start Recording
+                                 </button>
+                                 <span className="text-sm text-gray-300">(Audio capture mock)</span>
+                               </div>
+                             )}
                             {powError && (
                               <p className="mt-2 text-xs text-red-400">{powError}</p>
                             )}
@@ -901,8 +1166,8 @@ export default function RoadmapDetailPage() {
                         }
                         className="group relative w-full sm:flex-1 py-4 sm:py-3.5 px-6 rounded-xl font-semibold text-white overflow-hidden transition-all duration-300 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98]"
                       >
-                        <span className="absolute inset-0 bg-gradient-to-r from-violet-600 to-blue-600" />
-                        <span className="absolute inset-0 bg-gradient-to-r from-violet-500 to-blue-500 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                        <span className="absolute inset-0 bg-brand-primary" />
+                        <span className="absolute inset-0 bg-brand-primary opacity-0 group-hover:opacity-90 transition-opacity duration-300" />
                         <span className="relative flex items-center justify-center gap-2">
                           {powSaving ? (
                             <>
@@ -931,6 +1196,66 @@ export default function RoadmapDetailPage() {
                         </button>
                       )}
                     </div>
+
+                    {/* ── AI Verification Status & Button ── */}
+                    {(isMilestoneCompleted || verifyResult) && submissionType === "image" && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="mt-4 p-4 rounded-xl border border-violet-500/20 bg-violet-500/5"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3 min-w-0">
+                            {/* Verification status badge */}
+                            {verifyResult === null && verifying ? (
+                              <div className="flex items-center gap-2 text-sm text-violet-300">
+                                <div className="w-4 h-4 border-2 border-violet-400 border-t-transparent rounded-full animate-spin" />
+                                AI is thinking... analyzing your submission
+                              </div>
+                            ) : verifyResult ? (
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className={`shrink-0 inline-flex items-center justify-center w-8 h-8 rounded-full text-sm ${
+                                  verifyResult.verified
+                                    ? "bg-green-500/20 text-green-400 border border-green-500/30"
+                                    : "bg-amber-500/20 text-amber-400 border border-amber-500/30"
+                                }`}>
+                                  {verifyResult.verified ? "✅" : "⚠️"}
+                                </span>
+                                <div className="min-w-0">
+                                  <span className={`text-sm font-semibold ${
+                                    verifyResult.verified ? "text-green-400" : "text-amber-400"
+                                  }`}>
+                                    {verifyResult.verified ? "Verified" : "Needs Review"}
+                                  </span>
+                                  <p className="text-xs text-white/50 mt-0.5 truncate">
+                                    {verifyResult.feedback}
+                                  </p>
+                                </div>
+                              </div>
+                            ) : (
+                              <span className="text-sm text-white/50">Ready for AI verification</span>
+                            )}
+                          </div>
+
+                          {!verifyResult && (
+                            <button
+                              onClick={handleVerifySubmission}
+                              disabled={verifying}
+                              className="shrink-0 px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-xs font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed active:scale-95"
+                            >
+                              {verifying ? (
+                                <span className="flex items-center gap-1.5">
+                                  <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                  Thinking...
+                                </span>
+                              ) : (
+                                "Submit for Verification"
+                              )}
+                            </button>
+                          )}
+                        </div>
+                      </motion.div>
+                    )}
                   </div>
                 </motion.div>
 
