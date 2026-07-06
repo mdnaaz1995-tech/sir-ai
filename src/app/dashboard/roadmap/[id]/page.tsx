@@ -46,10 +46,13 @@ export default function RoadmapDetailPage() {
   const [powUrl, setPowUrl] = useState("");
   const [powSaving, setPowSaving] = useState(false);
   const [powError, setPowError] = useState<string | null>(null);
+  const [proofUrl, setProofUrl] = useState<string | null>(null);
   const powInputRef = useRef<HTMLInputElement>(null);
   // ── New multimodal submission state ──
   const [submissionType, setSubmissionType] = useState<'url' | 'image' | 'audio'>('url');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(null);
+  const [imageUploading, setImageUploading] = useState(false);
 
   // ── Verification state ──
   const [verifying, setVerifying] = useState(false);
@@ -425,15 +428,19 @@ export default function RoadmapDetailPage() {
     }
 
     // Build payload for multimodal submission
-    // ── Upload handling for image/audio submissions ──
+    // Use the pre-uploaded image URL for image submissions, or upload audio files on submit
     let uploadedUrl: string | null = null;
-    if (submissionType !== 'url' && selectedFile) {
+    if (submissionType === 'image') {
+      // Image was already uploaded on file selection — use the stored URL
+      uploadedUrl = uploadedImageUrl;
+    } else if (submissionType === 'audio' && selectedFile) {
+      setPowSaving(true); // Start loading state for upload
       // Generate a unique path to avoid collisions: <userId>/<timestamp>_<filename>
       const timestamp = Date.now();
       const safeName = selectedFile.name.replace(/\s+/g, '_');
       const filePath = `${userId}/${timestamp}_${safeName}`;
       const { error: uploadErr } = await supabase.storage
-        .from('pow_uploads')
+        .from('pow_images')
         .upload(filePath, selectedFile);
       if (uploadErr) {
         console.error('Upload error:', uploadErr.message);
@@ -442,15 +449,17 @@ export default function RoadmapDetailPage() {
         return;
       }
       // Retrieve the public URL for the uploaded file
-      const { data: publicData } = supabase.storage.from('pow_uploads').getPublicUrl(filePath);
+      const { data: publicData } = supabase.storage.from('pow_images').getPublicUrl(filePath);
       uploadedUrl = publicData?.publicUrl || null;
     }
 
     // Build the submission payload matching the project_progress table schema
-    const submittedUrl = submissionType === 'url' ? powUrl.trim() : null;
+    // Use uploadedUrl for proof_url if an image was submitted, otherwise use powUrl for URL submissions
+    const submittedUrl = submissionType === 'image' && uploadedUrl ? uploadedUrl : (submissionType === 'url' ? powUrl.trim() : null);
     const basePayload: any = {
       user_id: userId,
       roadmap_id: roadmapId,
+      project_title: roadmap.topic,
       task_index: activeTaskIndex,
       task_text: current.text,
       proof_url: submittedUrl,
@@ -492,7 +501,7 @@ export default function RoadmapDetailPage() {
     }
 
     // ── Trigger AI Vision verification for image submissions ──
-    if (submissionType === "image") {
+    if (submissionType === "image" && uploadedUrl) {
       // Fetch the saved submission ID to send to the verification API
       const { data: savedSubmission } = await supabase
         .from("project_progress")
@@ -503,6 +512,7 @@ export default function RoadmapDetailPage() {
 
       if (savedSubmission?.id) {
         setLastSubmittedImageId(savedSubmission.id);
+        lastSubmittedImageUrlRef.current = uploadedUrl;
         setIsMilestoneCompleted(true);
         // Auto-trigger verification in the background
         try {
@@ -510,7 +520,10 @@ export default function RoadmapDetailPage() {
           const verifyRes = await fetch("/api/verify-pow", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ submission_id: savedSubmission.id }),
+            body: JSON.stringify({
+              submission_id: savedSubmission.id,
+              image_url: uploadedUrl,
+            }),
           });
           const verifyData = await verifyRes.json();
           if (verifyRes.ok) {
@@ -549,7 +562,7 @@ export default function RoadmapDetailPage() {
     } else {
       saveTaskIndex(activeTaskIndex);
     }
-  }, [roadmap, parsePhases, flatTasks, activeTaskIndex, toggleLine, saveTaskIndex, isMilestone, powUrl, roadmapId, submissionType, selectedFile, showToast]);
+  }, [roadmap, parsePhases, flatTasks, activeTaskIndex, toggleLine, saveTaskIndex, isMilestone, powUrl, roadmapId, submissionType, selectedFile, uploadedImageUrl, showToast]);
 
   const handleSkip = useCallback(() => {
     if (!roadmap) return;
@@ -577,7 +590,10 @@ export default function RoadmapDetailPage() {
       const verifyRes = await fetch("/api/verify-pow", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ submission_id: lastSubmittedImageId }),
+        body: JSON.stringify({
+          submission_id: lastSubmittedImageId,
+          image_url: lastSubmittedImageUrlRef.current,
+        }),
       });
       const verifyData = await verifyRes.json();
 
@@ -603,6 +619,45 @@ export default function RoadmapDetailPage() {
     }
   }, [lastSubmittedImageId, showToast]);
 
+  // ── Upload image to pow_images bucket ──
+  const handleImageUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setPowSaving(true);
+    setPowError(null);
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Not authenticated");
+
+      const timestamp = Date.now();
+      const safeName = file.name.replace(/\s+/g, '_');
+      const filePath = `${user.id}/${timestamp}_${safeName}`;
+
+      const { error: uploadErr } = await supabase.storage
+        .from('pow_images')
+        .upload(filePath, file);
+
+      if (uploadErr) {
+        console.error('Upload error:', uploadErr.message);
+        showToast('File upload failed – please try again', 'error');
+        setPowSaving(false);
+        return;
+      }
+
+      const { data: publicData } = supabase.storage.from('pow_images').getPublicUrl(filePath);
+      const publicUrl = publicData?.publicUrl || null;
+      setProofUrl(publicUrl);
+      showToast('Image uploaded successfully!', 'success');
+    } catch (err: any) {
+      console.error('Upload error:', err.message);
+      showToast('File upload failed – please try again', 'error');
+    } finally {
+      setPowSaving(false);
+    }
+  }, [showToast]);
+
   // ── Reset PoW + verification state when task changes ──
   useEffect(() => {
     setPowUrl("");
@@ -612,6 +667,9 @@ export default function RoadmapDetailPage() {
     setLastSubmittedImageId(null);
     lastSubmittedImageUrlRef.current = null;
     setIsMilestoneCompleted(false);
+    setSelectedFile(null);
+    setUploadedImageUrl(null);
+    setImageUploading(false);
   }, [activeTaskIndex]);
 
   // ── Send chat message with streaming ──
@@ -805,8 +863,14 @@ export default function RoadmapDetailPage() {
   const currentTask = allTasks[activeTaskIndex] || null;
   const isMilestoneTask = currentTask ? isMilestone(activeTaskIndex) : false;
   const needsPoW = isMilestoneTask && currentTask && !currentTask.checked;
-  // PoW validation only applies when the submission type is URL
-  const isPoWValid = submissionType === 'url' ? /^https?:\/\/.+/.test(powUrl.trim()) : true;
+  // PoW validation: URL needs valid URL, image needs a file selected, audio needs a file selected
+  const isPoWValid = submissionType === 'url'
+    ? /^https?:\/\/.+/.test(powUrl.trim())
+    : submissionType === 'image'
+    ? selectedFile !== null
+    : submissionType === 'audio'
+    ? selectedFile !== null
+    : true;
 
   return (
     <div className="min-h-screen bg-brand-bg text-white">
@@ -1059,19 +1123,6 @@ export default function RoadmapDetailPage() {
                     </h3>
 
                     {/* ── Proof of Work Section (Milestone tasks only) ── */}
-                     {/* ── Submission Type Selector ── */}
-                     <div className="flex gap-2 mb-4">
-                       {(['url', 'image', 'audio'] as const).map((type) => (
-                         <button
-                           key={type}
-                           type="button"
-                           onClick={() => setSubmissionType(type)}
-                           className={`px-3 py-1 rounded ${submissionType === type ? 'bg-brand-primary text-white' : 'bg-gray-700 text-gray-300'} transition`}
-                         >
-                           {type.toUpperCase()}
-                         </button>
-                       ))}
-                     </div>
                      {needsPoW && (
                       <motion.div
                         initial={{ opacity: 0, height: 0 }}
@@ -1087,6 +1138,19 @@ export default function RoadmapDetailPage() {
                             <p className="text-xs text-amber-300/60 mb-3">
                               Bina Proof of Work ke aage nahi badh sakte! Apna live project ya code ka link share karo.
                             </p>
+                             {/* ── Submission Type Selector ── */}
+                             <div className="flex gap-2 mb-4">
+                               {(['url', 'image', 'audio'] as const).map((type) => (
+                                 <button
+                                   key={type}
+                                   type="button"
+                                   onClick={() => setSubmissionType(type)}
+                                   className={`px-3 py-1 rounded ${submissionType === type ? 'bg-brand-primary text-white' : 'bg-gray-700 text-gray-300'} transition`}
+                                 >
+                                   {type.toUpperCase()}
+                                 </button>
+                               ))}
+                             </div>
                              {/* Conditional input based on submission type */}
                              {submissionType === 'url' && (
                                <input
@@ -1103,12 +1167,21 @@ export default function RoadmapDetailPage() {
                              )}
                              {submissionType === 'image' && (
                                <div className="flex flex-col items-center justify-center border-2 border-dashed border-slate-700 bg-brand-card/50 p-6 rounded-xl">
-                                 {selectedFile ? (
+                                 {imageUploading ? (
+                                   <div className="flex flex-col items-center gap-2">
+                                     <div className="w-8 h-8 border-2 border-violet-400 border-t-transparent rounded-full animate-spin" />
+                                     <span className="text-sm text-gray-300">Uploading image...</span>
+                                   </div>
+                                 ) : selectedFile && uploadedImageUrl ? (
                                    <div className="flex flex-col items-center gap-2">
                                      <img src={URL.createObjectURL(selectedFile)} alt="preview" className="max-h-32 rounded" />
+                                     <span className="text-xs text-green-400">✅ Uploaded</span>
                                      <button
                                        type="button"
-                                       onClick={() => setSelectedFile(null)}
+                                       onClick={() => {
+                                         setSelectedFile(null);
+                                         setUploadedImageUrl(null);
+                                       }}
                                        className="px-2 py-1 bg-red-600 text-white rounded"
                                      >
                                        Remove
@@ -1122,9 +1195,7 @@ export default function RoadmapDetailPage() {
                                        accept="image/*"
                                        className="hidden"
                                        onChange={(e) => {
-                                         const file = e.target.files?.[0] || null;
-                                         setSelectedFile(file);
-                                         setPowError(null);
+                                         handleImageUpload(e);
                                        }}
                                      />
                                    </label>
@@ -1155,6 +1226,19 @@ export default function RoadmapDetailPage() {
                     )}
 
                     <div className="my-6 h-px bg-gradient-to-r from-violet-500/30 via-blue-500/20 to-transparent" />
+
+                    <div className="mb-4">
+                      <label className="block text-sm font-medium text-white/70 mb-2">Upload Proof (Image)</label>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleImageUpload}
+                        className="w-full px-4 py-3 rounded-xl bg-[#050508]/80 border border-white/10 text-sm text-white outline-none focus:border-violet-500/50 transition-all file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-violet-600 file:text-white hover:file:bg-violet-500"
+                      />
+                      {proofUrl && (
+                        <p className="mt-1 text-xs text-green-400">✓ Image uploaded: {proofUrl}</p>
+                      )}
+                    </div>
 
                     <div className="flex flex-col sm:flex-row gap-3">
                       <button

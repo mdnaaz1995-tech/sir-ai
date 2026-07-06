@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase-server";
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 
 // ── Supported Groq vision models (no additional API key needed) ──
-const VISION_MODEL = "llama-3.2-11b-vision-preview";
+const VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct";
 
 // ── Helper: update project_progress with verification results ──
 async function updateVerificationResult(
@@ -40,7 +40,7 @@ async function updateVerificationResult(
 
 export async function POST(request: NextRequest) {
   try {
-    const { submission_id } = await request.json();
+    const { submission_id, image_url: requestImageUrl } = await request.json();
     console.log("[verify-pow] Received verification request for submission_id:", submission_id);
 
     if (!submission_id) {
@@ -75,7 +75,7 @@ export async function POST(request: NextRequest) {
     // ── 2. Fetch the submission and verify ownership ──
     const { data: submission, error: subError } = await supabase
       .from("project_progress")
-      .select("id, user_id, roadmap_id, task_index, task_text, submission_type, submission_data")
+      .select("id, user_id, roadmap_id, task_index, task_text, submission_type, submission_data, proof_url")
       .eq("id", submission_id)
       .single();
 
@@ -104,11 +104,17 @@ export async function POST(request: NextRequest) {
     if (submission.submission_type === "image") {
       // Extract image URL from submission_data JSON
       const subData = submission.submission_data as Record<string, unknown> | null;
-      imageUrl = (subData?.file_url as string) || null;
+      // Priority: 1) image_url passed directly from client, 2) file_url in submission_data, 3) proof_url column
+      imageUrl = requestImageUrl || (subData?.file_url as string) || null;
+
+      // Fallback: use proof_url if file_url is not available in submission_data
+      if (!imageUrl) {
+        imageUrl = (submission as any).proof_url || null;
+      }
 
       if (!imageUrl) {
         return NextResponse.json(
-          { error: "No image URL found in submission_data" },
+          { error: "No image URL found in submission data" },
           { status: 400 }
         );
       }
@@ -131,7 +137,6 @@ Respond in JSON format with:
 
 Be generous but honest — if the image is clearly unrelated or low-effort, mark as not verified.`;
     } else {
-      // For URL submissions — we can't do vision, but we can provide a placeholder
       return NextResponse.json({
         verified: null,
         feedback: "Vision-based verification is only available for image submissions. URL submissions are accepted as-is.",
@@ -200,7 +205,6 @@ Be generous but honest — if the image is clearly unrelated or low-effort, mark
       confidenceScore = typeof parsed.confidence_score === "number" ? parsed.confidence_score : 0;
     } catch (parseErr) {
       console.error("[verify-pow] Failed to parse vision response as JSON:", parseErr);
-      // Fallback: try to extract from raw text
       verified = aiContent.toLowerCase().includes('"verified": true');
       feedback = aiContent;
     }
